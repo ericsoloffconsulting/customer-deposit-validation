@@ -96,10 +96,12 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
             // Calculate totals
             var totalDeposits = deposits.length;
             var totalDepositAmount = 0;
+            var totalAppliedAmount = 0;
             var totalUnappliedAmount = 0;
 
             for (var i = 0; i < deposits.length; i++) {
                 totalDepositAmount += deposits[i].depositAmount || 0;
+                totalAppliedAmount += deposits[i].amountApplied || 0;
                 totalUnappliedAmount += deposits[i].amountUnapplied || 0;
             }
 
@@ -116,11 +118,20 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
             html += '<h2 class="summary-title">Unapplied Customer Deposits - Kitchen Works Summary</h2>';
             html += '<div class="summary-grid">';
             html += buildSummaryCard('Total Deposits', totalDeposits, totalDepositAmount);
-            html += buildSummaryCard('Total Unapplied', totalDeposits, totalUnappliedAmount);
+            html += buildSummaryCard('Total Applied', totalDeposits, totalAppliedAmount);
             html += '</div>';
+            html += '<div class="summary-totals-row">';
             html += '<div class="summary-total">';
             html += '<span class="summary-total-label">Total Unapplied Amount:</span>';
             html += '<span class="summary-total-amount">' + formatCurrency(totalUnappliedAmount) + '</span>';
+            html += '</div>';
+            html += '<div class="summary-total">';
+            html += '<div class="prior-period-header">';
+            html += '<span class="summary-total-label">Unapplied Prior To:</span>';
+            html += '<input type="date" id="priorPeriodDate" class="prior-period-date-input" value="2024-12-31">';
+            html += '</div>';
+            html += '<span class="summary-total-amount" id="priorPeriodAmount">$0.00</span>';
+            html += '</div>';
             html += '</div>';
             html += '</div>';
 
@@ -213,6 +224,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
             html += '<th onclick="sortTable(\'' + sectionId + '\', 6)">Status</th>';
             html += '<th onclick="sortTable(\'' + sectionId + '\', 7)">Sales Order #</th>';
             html += '<th onclick="sortTable(\'' + sectionId + '\', 8)">SO Date</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 9)">SO Status</th>';
             html += '</tr>';
             html += '</thead>';
             html += '<tbody>';
@@ -254,6 +266,9 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 // SO Date
                 html += '<td data-date="' + (dep.soDate || '') + '">' + formatDate(dep.soDate) + '</td>';
 
+                // SO Status
+                html += '<td>' + escapeHtml(translateSOStatus(dep.soStatus)) + '</td>';
+
                 html += '</tr>';
             }
 
@@ -292,13 +307,16 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                         tl_dep.createdfrom AS so_id,
                         so.tranid AS so_number,
                         so.trandate AS so_date,
-                        BUILTIN.DF(so.entity) AS customer_name
+                        so.status AS so_status,
+                        c.altname AS customer_name
                     FROM transaction t
                     INNER JOIN transactionline tl_dep
                             ON t.id = tl_dep.transaction
                            AND tl_dep.mainline = 'T'
                     INNER JOIN transaction so
                             ON tl_dep.createdfrom = so.id
+                    INNER JOIN customer c
+                            ON so.entity = c.id
                     INNER JOIN transactionline tl_so
                             ON so.id = tl_so.transaction
                            AND tl_so.mainline = 'F'
@@ -315,7 +333,8 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                              tl_dep.createdfrom,
                              so.tranid,
                              so.trandate,
-                             BUILTIN.DF(so.entity)
+                             so.status,
+                             c.altname
                     ORDER BY t.trandate DESC
                 `;
 
@@ -334,6 +353,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                         soId: row.so_id,
                         soNumber: row.so_number,
                         soDate: row.so_date,
+                        soStatus: row.so_status,
                         customerName: row.customer_name
                     });
                 }
@@ -360,6 +380,25 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 'A': 'Not Deposited',
                 'B': 'Deposited',
                 'C': 'Fully Applied'
+            };
+            return statusMap[status] || status || '-';
+        }
+
+        /**
+         * Translates sales order status code to display text
+         * @param {string} status - Status code
+         * @returns {string} Display text
+         */
+        function translateSOStatus(status) {
+            var statusMap = {
+                'A': 'Pending Approval',
+                'B': 'Pending Fulfillment',
+                'C': 'Cancelled',
+                'D': 'Partially Fulfilled',
+                'E': 'Pending Billing/Partially Fulfilled',
+                'F': 'Pending Billing',
+                'G': 'Billed',
+                'H': 'Closed'
             };
             return statusMap[status] || status || '-';
         }
@@ -434,9 +473,13 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 '.summary-card-title { font-size: 12px; color: #666; margin-bottom: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }' +
                 '.summary-card-count { font-size: 14px; color: #333; margin-bottom: 8px; }' +
                 '.summary-card-amount { font-size: 18px; font-weight: bold; color: #4CAF50; }' +
+                '.summary-totals-row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }' +
                 '.summary-total { background: #fff; border: 2px solid #4CAF50; border-radius: 6px; padding: 15px; text-align: center; font-size: 18px; font-weight: bold; }' +
                 '.summary-total-label { color: #333; margin-right: 10px; }' +
-                '.summary-total-amount { color: #4CAF50; font-size: 24px; }' +
+                '.summary-total-amount { color: #4CAF50; font-size: 24px; display: block; margin-top: 5px; }' +
+                '.prior-period-header { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; }' +
+                '.prior-period-date-input { padding: 6px 10px; border: 1px solid #4CAF50; border-radius: 4px; font-size: 14px; color: #333; background: #fff; cursor: pointer; }' +
+                '.prior-period-date-input:focus { outline: none; box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.3); }' +
 
                 /* Search/Data Sections */
                 '.search-section { margin-bottom: 30px; }' +
@@ -446,13 +489,13 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 '.toggle-icon { font-size: 20px; font-weight: bold; color: #4CAF50; transition: transform 0.3s ease; }' +
                 '.search-content { transition: max-height 0.3s ease; }' +
                 '.search-content.collapsed { display: none; }' +
-                '.search-count { font-style: italic; color: #666; margin: 0; font-size: 12px; padding: 8px 10px; background: white; position: -webkit-sticky; position: sticky; top: 47px; z-index: 102; border-bottom: 1px solid #e9ecef; }' +
+                '.search-count { font-style: italic; color: #666; margin: 0; font-size: 12px; padding: 10px 10px; background: white; position: -webkit-sticky; position: sticky; top: 51px; z-index: 102; border-bottom: 1px solid #e9ecef; }' +
 
                 /* No results message */
                 '.no-results { text-align: center; color: #999; padding: 40px 20px; font-style: italic; }' +
 
                 /* Search Box */
-                '.search-box-container { margin: 0; padding: 10px 10px 20px 10px; background: white; position: -webkit-sticky; position: sticky; top: 78px; z-index: 102; border-bottom: 5px solid #4CAF50; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }' +
+                '.search-box-container { margin: 0; padding: 12px 10px 15px 10px; background: white; position: -webkit-sticky; position: sticky; top: 86px; z-index: 102; border-bottom: 5px solid #4CAF50; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }' +
                 '.search-box { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 14px; box-sizing: border-box; }' +
                 '.search-box:focus { outline: none; border-color: #4CAF50; box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.15); }' +
                 '.search-results-count { display: none; margin-left: 10px; color: #6c757d; font-size: 13px; font-style: italic; }' +
@@ -462,7 +505,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
 
                 /* Data Table - scoped to .data-table to avoid global td targeting */
                 'table.data-table { border-collapse: separate; border-spacing: 0; width: 100%; margin: 0; margin-top: 0 !important; border-left: 1px solid #ddd; border-right: 1px solid #ddd; border-bottom: 1px solid #ddd; background: white; }' +
-                'table.data-table thead th { position: -webkit-sticky; position: sticky; top: 138px; z-index: 101; background-color: #f8f9fa; border: 1px solid #ddd; border-top: none; padding: 10px 8px; text-align: left; vertical-align: top; font-weight: bold; color: #333; font-size: 12px; cursor: pointer; user-select: none; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); margin-top: 0; }' +
+                'table.data-table thead th { position: -webkit-sticky; position: sticky; top: 143px; z-index: 101; background-color: #f8f9fa; border: 1px solid #ddd; border-top: none; padding: 10px 8px; text-align: left; vertical-align: top; font-weight: bold; color: #333; font-size: 12px; cursor: pointer; user-select: none; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); margin-top: 0; }' +
                 'table.data-table thead th:hover { background-color: #e9ecef; }' +
                 'table.data-table th, table.data-table td { border: 1px solid #ddd; padding: 8px; text-align: left; vertical-align: top; color: #000; }' +
                 'table.data-table tbody tr:nth-child(even) td { background-color: #f9f9f9; }' +
@@ -548,7 +591,42 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 /* Restore state on page load */
                 'document.addEventListener(\'DOMContentLoaded\', function() {' +
                 '    restoreExpandedState();' +
+                '    calculatePriorPeriodAmount();' +
+                '    var dateInput = document.getElementById(\'priorPeriodDate\');' +
+                '    if (dateInput) {' +
+                '        dateInput.addEventListener(\'change\', calculatePriorPeriodAmount);' +
+                '    }' +
                 '});' +
+                '' +
+                '/* Calculate unapplied amount for deposits prior to selected date */' +
+                'function calculatePriorPeriodAmount() {' +
+                '    var dateInput = document.getElementById(\'priorPeriodDate\');' +
+                '    var amountSpan = document.getElementById(\'priorPeriodAmount\');' +
+                '    if (!dateInput || !amountSpan) return;' +
+                '    ' +
+                '    var cutoffDate = new Date(dateInput.value + \'T23:59:59\');' +
+                '    var table = document.getElementById(\'table-deposits\');' +
+                '    if (!table) { amountSpan.textContent = \'$0.00\'; return; }' +
+                '    ' +
+                '    var rows = table.querySelectorAll(\'tbody tr\');' +
+                '    var total = 0;' +
+                '    ' +
+                '    for (var i = 0; i < rows.length; i++) {' +
+                '        var dateCell = rows[i].cells[1];' +
+                '        var unappliedCell = rows[i].cells[5];' +
+                '        var dateStr = dateCell.getAttribute(\'data-date\');' +
+                '        ' +
+                '        if (dateStr) {' +
+                '            var rowDate = new Date(dateStr);' +
+                '            if (rowDate <= cutoffDate) {' +
+                '                var amountText = unappliedCell.textContent.replace(/[^0-9.-]/g, \'\');' +
+                '                total += parseFloat(amountText) || 0;' +
+                '            }' +
+                '        }' +
+                '    }' +
+                '    ' +
+                '    amountSpan.textContent = \'$\' + total.toFixed(2).replace(/\\d(?=(\\d{3})+\\.)/g, \'$&,\');' +
+                '}' +
 
                 /* Sort table by column */
                 'function sortTable(sectionId, columnIndex) {' +
@@ -602,10 +680,10 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 '        var allHeaders = table.querySelectorAll(\'th\');' +
                 '        for (var i = 0; i < allHeaders.length; i++) {' +
                 '            var header = allHeaders[i];' +
-                '            var text = header.textContent.replace(/⏳ Sorting\\.\\.\\./, \'\').replace(/ [▲▼]/g, \'\').trim();' +
                 '            if (i == columnIndex) {' +
-                '                header.textContent = text + (newDir === \'asc\' ? \' ▲\' : \' ▼\');' +
+                '                header.textContent = originalText + (newDir === \'asc\' ? \' ▲\' : \' ▼\');' +
                 '            } else {' +
+                '                var text = header.textContent.replace(/ [▲▼]/g, \'\').trim();' +
                 '                header.textContent = text;' +
                 '            }' +
                 '        }' +
