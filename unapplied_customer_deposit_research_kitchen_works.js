@@ -106,6 +106,21 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 totalUnappliedAmount += deposits[i].amountUnapplied || 0;
             }
 
+            // Get unapplied credit memo data (needed for summary)
+            var creditMemos = searchUnappliedCreditMemos();
+
+            // Calculate CM totals
+            var totalCMs = creditMemos.length;
+            var totalCMAmount = 0;
+            var totalCMApplied = 0;
+            var totalCMUnapplied = 0;
+
+            for (var j = 0; j < creditMemos.length; j++) {
+                totalCMAmount += creditMemos[j].cmAmount || 0;
+                totalCMApplied += creditMemos[j].amountApplied || 0;
+                totalCMUnapplied += creditMemos[j].amountUnapplied || 0;
+            }
+
             var html = '';
 
             // Add styles
@@ -114,13 +129,12 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
             // Main container
             html += '<div class="portal-container">';
 
-            // Summary Section
+            // Combined Summary Row - both sections side by side
+            html += '<div class="summary-row">';
+
+            // Customer Deposits Summary Section
             html += '<div class="summary-section">';
-            html += '<h2 class="summary-title">True Customer Deposits - Kitchen Works Summary</h2>';
-            html += '<div class="summary-grid">';
-            html += buildSummaryCard('Total Deposits', totalDeposits, totalDepositAmount);
-            html += buildSummaryCard('Total Applied', totalDeposits, totalAppliedAmount);
-            html += '</div>';
+            html += '<h2 class="summary-title">True Customer Deposits</h2>';
             html += '<div class="summary-totals-row">';
             html += '<div class="summary-total">';
             html += '<span class="summary-total-label">Total Unapplied Amount:</span>';
@@ -136,10 +150,35 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
             html += '</div>';
             html += '</div>';
 
-            // Data Section
+            // Credit Memo Overpayments Summary Section
+            html += '<div class="summary-section">';
+            html += '<h2 class="summary-title">Credit Memo Overpayments</h2>';
+            html += '<div class="summary-totals-row">';
+            html += '<div class="summary-total">';
+            html += '<span class="summary-total-label">Total Unapplied Amount:</span>';
+            html += '<span class="summary-total-amount">' + formatCurrency(totalCMUnapplied) + '</span>';
+            html += '</div>';
+            html += '<div class="summary-total">';
+            html += '<div class="prior-period-header">';
+            html += '<span class="summary-total-label">Overpayment Date Prior To:</span>';
+            html += '<input type="date" id="cmPriorPeriodDate" class="prior-period-date-input" value="2024-12-31">';
+            html += '</div>';
+            html += '<span class="summary-total-amount" id="cmPriorPeriodAmount">$0.00</span>';
+            html += '</div>';
+            html += '</div>';
+            html += '</div>';
+
+            html += '</div>'; // Close summary-row
+
+            // Data Section - Customer Deposits
             html += buildDataSection('deposits', 'True Customer Deposits', 
                 'Customer deposits linked to Kitchen Retail Sales orders that have not been fully applied', 
                 deposits, scriptUrl);
+
+            // Data Section - Credit Memos
+            html += buildCreditMemoDataSection('creditmemos', 'Credit Memo Overpayments from Customer Deposits', 
+                'Unapplied credit memos created from overpayment customer deposits linked to Kitchen Retail Sales orders', 
+                creditMemos, scriptUrl);
 
             html += '</div>'; // Close portal-container
 
@@ -291,6 +330,151 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
         }
 
         /**
+         * Builds a collapsible data section for Credit Memos
+         * @param {string} sectionId - Section identifier
+         * @param {string} title - Section title
+         * @param {string} description - Section description
+         * @param {Array} data - Data array
+         * @param {string} scriptUrl - Suitelet URL
+         * @returns {string} HTML for data section
+         */
+        function buildCreditMemoDataSection(sectionId, title, description, data, scriptUrl) {
+            var totalRecords = data.length;
+            
+            var html = '';
+            html += '<div class="search-section" id="section-' + sectionId + '">';
+            html += '<div class="search-title collapsible" data-section-id="' + sectionId + '">';
+            html += '<span>' + escapeHtml(title) + ' (' + totalRecords + ')</span>';
+            html += '<span class="toggle-icon" id="toggle-' + sectionId + '">−</span>';
+            html += '</div>';
+            html += '<div class="search-content" id="content-' + sectionId + '">';
+            html += '<div class="search-count">' + escapeHtml(description) + '</div>';
+            
+            if (totalRecords === 0) {
+                html += '<p class="no-results">No unapplied credit memo overpayments found for Kitchen Works orders.</p>';
+            } else {
+                html += '<div class="search-box-container">';
+                html += '<div class="search-row">';
+                html += '<input type="text" id="searchBox-' + sectionId + '" class="search-box" placeholder="Search this table..." onkeyup="filterTable(\'' + sectionId + '\')">';
+                html += '<button type="button" class="export-btn" onclick="exportToExcel(\'' + sectionId + '\')">📥 Export to Excel</button>';
+                html += '</div>';
+                html += '<span class="search-results-count" id="searchCount-' + sectionId + '"></span>';
+                html += '</div>';
+                html += buildCreditMemoTable(data, scriptUrl, sectionId);
+            }
+            
+            html += '</div>';
+            html += '</div>';
+            return html;
+        }
+
+        /**
+         * Builds the credit memo data table
+         * @param {Array} creditMemos - Credit memo data
+         * @param {string} scriptUrl - Suitelet URL
+         * @param {string} sectionId - Section identifier
+         * @returns {string} HTML table
+         */
+        function buildCreditMemoTable(creditMemos, scriptUrl, sectionId) {
+            var html = '';
+
+            html += '<div class="table-container">';
+            html += '<table class="data-table" id="table-' + sectionId + '">';
+            html += '<thead>';
+            html += '<tr>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 0)">Credit Memo #</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 1)">CM Date</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 2)">Customer</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 3)">CM Amount</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 4)">Amount Applied</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 5)">Amount Unapplied</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 6)">Status</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 7)">Linked CD #</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 8)">Overpayment Date</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 9)">CD Date</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 10)">Sales Order #</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 11)">SO Date</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 12)">Selling Location</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 13)">Unbilled Orders</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 14)">Deposit Balance</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 15)">A/R Balance</th>';
+            html += '</tr>';
+            html += '</thead>';
+            html += '<tbody>';
+
+            for (var i = 0; i < creditMemos.length; i++) {
+                var cm = creditMemos[i];
+                var rowClass = (i % 2 === 0) ? 'even-row' : 'odd-row';
+
+                html += '<tr class="' + rowClass + '" id="cm-row-' + cm.cmId + '">';
+
+                // Credit Memo # with link
+                html += '<td><a href="/app/accounting/transactions/custcred.nl?id=' + cm.cmId + '" target="_blank">' + escapeHtml(cm.cmNumber) + '</a></td>';
+
+                // CM Date
+                html += '<td data-date="' + (cm.cmDate || '') + '">' + formatDate(cm.cmDate) + '</td>';
+
+                // Customer
+                html += '<td>' + escapeHtml(cm.customerName || '-') + '</td>';
+
+                // CM Amount
+                html += '<td class="amount">' + formatCurrency(cm.cmAmount) + '</td>';
+
+                // Amount Applied
+                html += '<td class="amount">' + formatCurrency(cm.amountApplied) + '</td>';
+
+                // Amount Unapplied
+                html += '<td class="amount unapplied">' + formatCurrency(cm.amountUnapplied) + '</td>';
+
+                // Status
+                html += '<td>' + escapeHtml(translateCMStatus(cm.cmStatus)) + '</td>';
+
+                // Linked CD # with link
+                if (cm.cdId) {
+                    html += '<td><a href="/app/accounting/transactions/custdep.nl?id=' + cm.cdId + '" target="_blank">' + escapeHtml(cm.cdNumber) + '</a></td>';
+                } else {
+                    html += '<td>-</td>';
+                }
+
+                // Overpayment Date
+                html += '<td data-date="' + (cm.overpaymentDate || '') + '">' + formatDate(cm.overpaymentDate) + '</td>';
+
+                // CD Date
+                html += '<td data-date="' + (cm.cdDate || '') + '">' + formatDate(cm.cdDate) + '</td>';
+
+                // Sales Order # with link
+                if (cm.soId) {
+                    html += '<td><a href="/app/accounting/transactions/salesord.nl?id=' + cm.soId + '" target="_blank">' + escapeHtml(cm.soNumber) + '</a></td>';
+                } else {
+                    html += '<td>-</td>';
+                }
+
+                // SO Date
+                html += '<td data-date="' + (cm.soDate || '') + '">' + formatDate(cm.soDate) + '</td>';
+
+                // Department/Selling Location
+                html += '<td>' + escapeHtml(cm.soDepartment || '-') + '</td>';
+
+                // Unbilled Orders
+                html += '<td class="amount">' + formatCurrency(cm.unbilledOrders) + '</td>';
+
+                // Deposit Balance
+                html += '<td class="amount">' + formatCurrency(cm.depositBalance) + '</td>';
+
+                // A/R Balance
+                html += '<td class="amount">' + formatCurrencyWithSign(cm.arBalance) + '</td>';
+
+                html += '</tr>';
+            }
+
+            html += '</tbody>';
+            html += '</table>';
+            html += '</div>';
+
+            return html;
+        }
+
+        /**
          * Searches for unapplied customer deposits linked to Kitchen Works sales orders
          * @returns {Array} Array of deposit objects
          */
@@ -387,6 +571,100 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
         }
 
         /**
+         * Searches for unapplied credit memos from overpayment deposits linked to Kitchen Works sales orders
+         * @returns {Array} Array of credit memo objects
+         */
+        function searchUnappliedCreditMemos() {
+            var creditMemos = [];
+
+            try {
+                var sql = `
+                    SELECT 
+                        cm.id AS cm_id,
+                        cm.tranid AS cm_number,
+                        cm.trandate AS cm_date,
+                        ABS(cm.foreigntotal) AS cm_amount,
+                        cm.status AS cm_status,
+                        cm.custbody_overpayment_tran AS cd_id,
+                        cd.tranid AS cd_number,
+                        cm.custbody_overpayment_date AS overpayment_date,
+                        cm.custbody_overpayment_cd_date AS cd_date,
+                        tl_cd.createdfrom AS so_id,
+                        so.tranid AS so_number,
+                        so.trandate AS so_date,
+                        c.altname AS customer_name,
+                        d.name AS so_department,
+                        COALESCE(tal.amountlinked, 0) AS amount_linked,
+                        (ABS(tal.amount) - COALESCE(tal.amountlinked, 0)) AS amount_unapplied,
+                        c.unbilledOrdersSearch AS unbilled_orders,
+                        c.depositBalanceSearch AS deposit_balance,
+                        c.balanceSearch AS ar_balance
+                    FROM transaction cm
+                    INNER JOIN transactionaccountingline tal ON cm.id = tal.transaction AND tal.credit IS NOT NULL
+                    INNER JOIN transaction cd ON cm.custbody_overpayment_tran = cd.id
+                    INNER JOIN transactionline tl_cd ON cd.id = tl_cd.transaction AND tl_cd.mainline = 'T'
+                    INNER JOIN transaction so ON tl_cd.createdfrom = so.id
+                    INNER JOIN customer c ON cm.entity = c.id
+                    INNER JOIN transactionline tl_so ON so.id = tl_so.transaction AND tl_so.mainline = 'F'
+                    INNER JOIN item i ON tl_so.item = i.id
+                    LEFT JOIN department d ON tl_so.department = d.id
+                    WHERE cm.type = 'CustCred'
+                      AND cm.status = 'A'
+                      AND cm.custbody_overpayment_tran IS NOT NULL
+                      AND i.incomeaccount = 338
+                      AND (ABS(tal.amount) - COALESCE(tal.amountlinked, 0)) > 0
+                    GROUP BY cm.id, cm.tranid, cm.trandate, cm.foreigntotal, cm.status,
+                             cm.custbody_overpayment_tran, cd.tranid, tl_cd.createdfrom,
+                             cm.custbody_overpayment_date, cm.custbody_overpayment_cd_date,
+                             so.tranid, so.trandate, c.altname, d.name, tal.amount, tal.amountlinked,
+                             c.unbilledOrdersSearch, c.depositBalanceSearch, c.balanceSearch
+                    ORDER BY cm.trandate DESC
+                `;
+
+                var results = query.runSuiteQL({ query: sql }).asMappedResults();
+
+                for (var i = 0; i < results.length; i++) {
+                    var row = results[i];
+                    var cmAmount = parseFloat(row.cm_amount) || 0;
+                    var amountUnapplied = parseFloat(row.amount_unapplied) || 0;
+                    var amountApplied = cmAmount - amountUnapplied;
+
+                    creditMemos.push({
+                        cmId: row.cm_id,
+                        cmNumber: row.cm_number,
+                        cmDate: row.cm_date,
+                        cmAmount: cmAmount,
+                        cmStatus: row.cm_status,
+                        amountApplied: amountApplied,
+                        amountUnapplied: amountUnapplied,
+                        cdId: row.cd_id,
+                        cdNumber: row.cd_number,
+                        overpaymentDate: row.overpayment_date,
+                        cdDate: row.cd_date,
+                        soId: row.so_id,
+                        soNumber: row.so_number,
+                        soDate: row.so_date,
+                        customerName: row.customer_name,
+                        soDepartment: row.so_department,
+                        unbilledOrders: parseFloat(row.unbilled_orders) || 0,
+                        depositBalance: parseFloat(row.deposit_balance) || 0,
+                        arBalance: parseFloat(row.ar_balance) || 0
+                    });
+                }
+
+                log.debug('CM Search Results', 'Found ' + creditMemos.length + ' unapplied credit memos');
+
+            } catch (e) {
+                log.error('Error Searching Credit Memos', {
+                    error: e.message,
+                    stack: e.stack
+                });
+            }
+
+            return creditMemos;
+        }
+
+        /**
          * Translates deposit status code to display text
          * @param {string} status - Status code
          * @returns {string} Display text
@@ -396,6 +674,19 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 'A': 'Not Deposited',
                 'B': 'Deposited',
                 'C': 'Fully Applied'
+            };
+            return statusMap[status] || status || '-';
+        }
+
+        /**
+         * Translates credit memo status code to display text
+         * @param {string} status - Status code
+         * @returns {string} Display text
+         */
+        function translateCMStatus(status) {
+            var statusMap = {
+                'A': 'Open',
+                'B': 'Fully Applied'
             };
             return statusMap[status] || status || '-';
         }
@@ -427,6 +718,17 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
         function formatCurrency(value) {
             if (!value && value !== 0) return '-';
             return '$' + Math.abs(value).toFixed(2).replace(/\d(?=(\d{3})+\.)/g, '$&,');
+        }
+
+        /**
+         * Formats a currency value preserving the sign (for A/R balance)
+         * @param {number} value - Currency value
+         * @returns {string} Formatted currency with sign
+         */
+        function formatCurrencyWithSign(value) {
+            if (!value && value !== 0) return '-';
+            var prefix = value < 0 ? '-$' : '$';
+            return prefix + Math.abs(value).toFixed(2).replace(/\d(?=(\d{3})+\.)/g, '$&,');
         }
 
         /**
@@ -480,9 +782,12 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 /* Main container - avoid targeting global td */
                 '.portal-container { margin: 0; padding: 20px; border: none; background: transparent; position: relative; }' +
 
+                /* Summary Row - side by side sections */
+                '.summary-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0 30px 0; }' +
+
                 /* Summary Section */
-                '.summary-section { background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border: 2px solid #dee2e6; border-radius: 8px; padding: 20px; margin: 20px 0 30px 0; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); }' +
-                '.summary-title { margin: 0 0 20px 0; font-size: 20px; font-weight: bold; color: #333; text-align: center; }' +
+                '.summary-section { background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border: 2px solid #dee2e6; border-radius: 8px; padding: 20px; margin: 0; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); }' +
+                '.summary-title { margin: 0 0 15px 0; font-size: 24px; font-weight: bold; color: #333; text-align: center; }' +
                 '.summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }' +
                 '.summary-card { background: white; border: 1px solid #dee2e6; border-radius: 6px; padding: 15px; text-align: center; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08); transition: transform 0.2s, box-shadow 0.2s; }' +
                 '.summary-card:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12); }' +
@@ -490,11 +795,11 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 '.summary-card-count { font-size: 14px; color: #333; margin-bottom: 8px; }' +
                 '.summary-card-amount { font-size: 18px; font-weight: bold; color: #4CAF50; }' +
                 '.summary-totals-row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }' +
-                '.summary-total { background: #fff; border: 2px solid #4CAF50; border-radius: 6px; padding: 15px; text-align: center; font-size: 18px; font-weight: bold; }' +
-                '.summary-total-label { color: #333; margin-right: 10px; }' +
-                '.summary-total-amount { color: #4CAF50; font-size: 24px; display: block; margin-top: 5px; }' +
-                '.prior-period-header { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; }' +
-                '.prior-period-date-input { padding: 6px 10px; border: 1px solid #4CAF50; border-radius: 4px; font-size: 14px; color: #333; background: #fff; cursor: pointer; }' +
+                '.summary-total { background: #fff; border: 2px solid #4CAF50; border-radius: 6px; padding: 12px 10px; text-align: center; font-size: 18px; font-weight: bold; }' +
+                '.summary-total-label { color: #333; font-size: 12px; font-weight: 600; }' +
+                '.summary-total-amount { color: #4CAF50; font-size: 24px; display: block; margin-top: 8px; }' +
+                '.prior-period-header { display: flex; align-items: center; justify-content: center; flex-wrap: nowrap; gap: 6px; }' +
+                '.prior-period-date-input { padding: 4px 6px; border: 1px solid #4CAF50; border-radius: 4px; font-size: 12px; color: #333; background: #fff; cursor: pointer; }' +
                 '.prior-period-date-input:focus { outline: none; box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.3); }' +
 
                 /* Search/Data Sections */
@@ -612,9 +917,14 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 'document.addEventListener(\'DOMContentLoaded\', function() {' +
                 '    restoreExpandedState();' +
                 '    calculatePriorPeriodAmount();' +
+                '    calculateCMPriorPeriodAmount();' +
                 '    var dateInput = document.getElementById(\'priorPeriodDate\');' +
                 '    if (dateInput) {' +
                 '        dateInput.addEventListener(\'change\', calculatePriorPeriodAmount);' +
+                '    }' +
+                '    var cmDateInput = document.getElementById(\'cmPriorPeriodDate\');' +
+                '    if (cmDateInput) {' +
+                '        cmDateInput.addEventListener(\'change\', calculateCMPriorPeriodAmount);' +
                 '    }' +
                 '});' +
                 '' +
@@ -635,6 +945,36 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 '        var dateCell = rows[i].cells[1];' +
                 '        var unappliedCell = rows[i].cells[5];' +
                 '        var dateStr = dateCell.getAttribute(\'data-date\');' +
+                '        ' +
+                '        if (dateStr) {' +
+                '            var rowDate = new Date(dateStr);' +
+                '            if (rowDate <= cutoffDate) {' +
+                '                var amountText = unappliedCell.textContent.replace(/[^0-9.-]/g, \'\');' +
+                '                total += parseFloat(amountText) || 0;' +
+                '            }' +
+                '        }' +
+                '    }' +
+                '    ' +
+                '    amountSpan.textContent = \'$\' + total.toFixed(2).replace(/\\d(?=(\\d{3})+\\.)/g, \'$&,\');' +
+                '}' +
+                '' +
+                '/* Calculate unapplied amount for credit memos prior to selected overpayment date */' +
+                'function calculateCMPriorPeriodAmount() {' +
+                '    var dateInput = document.getElementById(\'cmPriorPeriodDate\');' +
+                '    var amountSpan = document.getElementById(\'cmPriorPeriodAmount\');' +
+                '    if (!dateInput || !amountSpan) return;' +
+                '    ' +
+                '    var cutoffDate = new Date(dateInput.value + \'T23:59:59\');' +
+                '    var table = document.getElementById(\'table-creditmemos\');' +
+                '    if (!table) { amountSpan.textContent = \'$0.00\'; return; }' +
+                '    ' +
+                '    var rows = table.querySelectorAll(\'tbody tr\');' +
+                '    var total = 0;' +
+                '    ' +
+                '    for (var i = 0; i < rows.length; i++) {' +
+                '        var overpaymentDateCell = rows[i].cells[8];' +
+                '        var unappliedCell = rows[i].cells[5];' +
+                '        var dateStr = overpaymentDateCell.getAttribute(\'data-date\');' +
                 '        ' +
                 '        if (dateStr) {' +
                 '            var rowDate = new Date(dateStr);' +
@@ -779,11 +1119,13 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 '    }' +
                 '    ' +
                 '    var wb = XLSX.utils.book_new();' +
-                '    XLSX.utils.book_append_sheet(wb, ws, \'Customer Deposits\');' +
+                '    var sheetName = sectionId === \'creditmemos\' ? \'Credit Memos\' : \'Customer Deposits\';' +
+                '    XLSX.utils.book_append_sheet(wb, ws, sheetName);' +
                 '    ' +
                 '    var today = new Date();' +
                 '    var dateStr = (today.getMonth()+1) + \'-\' + today.getDate() + \'-\' + today.getFullYear();' +
-                '    XLSX.writeFile(wb, \'Kitchen_Works_Deposits_\' + dateStr + \'.xlsx\');' +
+                '    var fileName = sectionId === \'creditmemos\' ? \'Kitchen_Works_Credit_Memos_\' : \'Kitchen_Works_Deposits_\';' +
+                '    XLSX.writeFile(wb, fileName + dateStr + \'.xlsx\');' +
                 '}';
         }
 
