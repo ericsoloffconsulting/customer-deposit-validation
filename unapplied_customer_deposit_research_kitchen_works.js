@@ -291,7 +291,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                     SELECT 
                         t.id AS deposit_id,
                         t.tranid AS deposit_number,
-                        t.trandate AS deposit_date,
+                        CASE WHEN t.trandate <= TO_DATE('2024-04-30', 'YYYY-MM-DD') THEN so.trandate ELSE t.trandate END AS deposit_date,
                         t.foreigntotal AS deposit_amount,
                         t.status AS deposit_status,
                         (SELECT COALESCE(SUM(depa2.foreigntotal), 0)
