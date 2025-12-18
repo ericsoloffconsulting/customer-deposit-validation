@@ -2,6 +2,7 @@
  * @NApiVersion 2.1
  * @NScriptType Suitelet
  * @NModuleScope SameAccount
+ * @NAmdConfig /SuiteScripts/ericsoloffconsulting/JsLibraryConfig.json
  * 
  * Unapplied Customer Deposit Research - Kitchen Works
  * 
@@ -46,7 +47,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
 
             // Create NetSuite form
             var form = serverWidget.createForm({
-                title: 'Unapplied Customer Deposit Research - Kitchen Works'
+                title: 'Customer Deposit Research - Kitchen Works'
             });
 
             try {
@@ -115,7 +116,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
 
             // Summary Section
             html += '<div class="summary-section">';
-            html += '<h2 class="summary-title">Unapplied Customer Deposits - Kitchen Works Summary</h2>';
+            html += '<h2 class="summary-title">True Customer Deposits - Kitchen Works Summary</h2>';
             html += '<div class="summary-grid">';
             html += buildSummaryCard('Total Deposits', totalDeposits, totalDepositAmount);
             html += buildSummaryCard('Total Applied', totalDeposits, totalAppliedAmount);
@@ -136,11 +137,14 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
             html += '</div>';
 
             // Data Section
-            html += buildDataSection('deposits', 'Unapplied Customer Deposits', 
+            html += buildDataSection('deposits', 'True Customer Deposits', 
                 'Customer deposits linked to Kitchen Retail Sales orders that have not been fully applied', 
                 deposits, scriptUrl);
 
             html += '</div>'; // Close portal-container
+
+            // Add SheetJS library for Excel export
+            html += '<script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>';
 
             // Add JavaScript
             html += '<script>' + getJavaScript(scriptUrl) + '</script>';
@@ -190,7 +194,10 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 html += '<p class="no-results">No unapplied customer deposits found for Kitchen Works orders.</p>';
             } else {
                 html += '<div class="search-box-container">';
+                html += '<div class="search-row">';
                 html += '<input type="text" id="searchBox-' + sectionId + '" class="search-box" placeholder="Search this table..." onkeyup="filterTable(\'' + sectionId + '\')">'; 
+                html += '<button type="button" class="export-btn" onclick="exportToExcel(\'' + sectionId + '\')">📥 Export to Excel</button>';
+                html += '</div>';
                 html += '<span class="search-results-count" id="searchCount-' + sectionId + '"></span>';
                 html += '</div>';
                 html += buildDepositTable(data, scriptUrl, sectionId);
@@ -505,16 +512,20 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
 
                 /* Search Box */
                 '.search-box-container { margin: 0; padding: 12px 10px 15px 10px; background: white; position: -webkit-sticky; position: sticky; top: 86px; z-index: 102; border-bottom: 5px solid #4CAF50; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }' +
-                '.search-box { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 14px; box-sizing: border-box; }' +
+                '.search-row { display: flex; gap: 10px; align-items: center; }' +
+                '.search-box { flex: 1; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 14px; box-sizing: border-box; }' +
                 '.search-box:focus { outline: none; border-color: #4CAF50; box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.15); }' +
                 '.search-results-count { display: none; margin-left: 10px; color: #6c757d; font-size: 13px; font-style: italic; }' +
+                '.export-btn { padding: 10px 16px; background: #4CAF50; color: white; border: none; border-radius: 4px; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background 0.2s; }' +
+                '.export-btn:hover { background: #45a049; }' +
+                '.export-btn:active { background: #3d8b40; }' +
 
                 /* Table Container */
                 '.table-container { overflow: visible; }' +
 
                 /* Data Table - scoped to .data-table to avoid global td targeting */
                 'table.data-table { border-collapse: separate; border-spacing: 0; width: 100%; margin: 0; margin-top: 0 !important; border-left: 1px solid #ddd; border-right: 1px solid #ddd; border-bottom: 1px solid #ddd; background: white; }' +
-                'table.data-table thead th { position: -webkit-sticky; position: sticky; top: 143px; z-index: 101; background-color: #f8f9fa; border: 1px solid #ddd; border-top: none; padding: 10px 8px; text-align: left; vertical-align: top; font-weight: bold; color: #333; font-size: 12px; cursor: pointer; user-select: none; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); margin-top: 0; }' +
+                'table.data-table thead th { position: -webkit-sticky; position: sticky; top: 157px; z-index: 101; background-color: #f8f9fa; border: 1px solid #ddd; border-top: none; padding: 10px 8px; text-align: left; vertical-align: top; font-weight: bold; color: #333; font-size: 12px; cursor: pointer; user-select: none; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); margin-top: 0; }' +
                 'table.data-table thead th:hover { background-color: #e9ecef; }' +
                 'table.data-table th, table.data-table td { border: 1px solid #ddd; padding: 8px; text-align: left; vertical-align: top; color: #000; }' +
                 'table.data-table tbody tr:nth-child(even) td { background-color: #f9f9f9; }' +
@@ -726,6 +737,53 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 '    } else {' +
                 '        countSpan.style.display = \'none\';' +
                 '    }' +
+                '}' +
+                '' +
+                '/* Export table to Excel using SheetJS */' +
+                'function exportToExcel(sectionId) {' +
+                '    var table = document.getElementById(\'table-\' + sectionId);' +
+                '    if (!table) { alert(\'No data to export\'); return; }' +
+                '    ' +
+                '    var headers = [];' +
+                '    var headerCells = table.querySelectorAll(\'thead th\');' +
+                '    for (var i = 0; i < headerCells.length; i++) {' +
+                '        headers.push(headerCells[i].textContent.replace(/ [▲▼]/g, \'\').trim());' +
+                '    }' +
+                '    ' +
+                '    var data = [headers];' +
+                '    var rows = table.querySelectorAll(\'tbody tr\');' +
+                '    for (var i = 0; i < rows.length; i++) {' +
+                '        var row = rows[i];' +
+                '        var rowData = [];' +
+                '        var cells = row.querySelectorAll(\'td\');' +
+                '        for (var j = 0; j < cells.length; j++) {' +
+                '            var cell = cells[j];' +
+                '            var val = cell.textContent.trim();' +
+                '            if (cell.classList.contains(\'amount\')) {' +
+                '                val = parseFloat(val.replace(/[\\$,]/g, \'\')) || 0;' +
+                '            }' +
+                '            rowData.push(val);' +
+                '        }' +
+                '        data.push(rowData);' +
+                '    }' +
+                '    ' +
+                '    var ws = XLSX.utils.aoa_to_sheet(data);' +
+                '    ' +
+                '    /* Apply currency format to amount columns (D, E, F = columns 3, 4, 5) */' +
+                '    var range = XLSX.utils.decode_range(ws["!ref"]);' +
+                '    for (var R = 1; R <= range.e.r; R++) {' +
+                '        for (var C = 3; C <= 5; C++) {' +
+                '            var addr = XLSX.utils.encode_cell({r: R, c: C});' +
+                '            if (ws[addr]) { ws[addr].z = "\\\"$\\\"#,##0.00"; }' +
+                '        }' +
+                '    }' +
+                '    ' +
+                '    var wb = XLSX.utils.book_new();' +
+                '    XLSX.utils.book_append_sheet(wb, ws, \'Customer Deposits\');' +
+                '    ' +
+                '    var today = new Date();' +
+                '    var dateStr = (today.getMonth()+1) + \'-\' + today.getDate() + \'-\' + today.getFullYear();' +
+                '    XLSX.writeFile(wb, \'Kitchen_Works_Deposits_\' + dateStr + \'.xlsx\');' +
                 '}';
         }
 
