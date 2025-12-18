@@ -91,23 +91,39 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 returnExternalUrl: false
             });
 
-            // Get unapplied deposit data
-            var deposits = searchUnappliedDeposits();
+            // Get balance as of date from params, default to 12/31/2025
+            var balanceAsOf = (params.balanceAsOf && params.balanceAsOf.trim()) ? params.balanceAsOf.trim() : '2025-12-31';
 
-            // Calculate totals
-            var totalDeposits = deposits.length;
+            // Get unapplied deposit data
+            var depositResult = searchUnappliedDeposits(balanceAsOf);
+            var deposits = depositResult.deposits;
+            var depositsIsTruncated = depositResult.isTruncated;
+
+            // Calculate totals - use aggregate if truncated, otherwise sum from line items
+            var totalDeposits = depositResult.actualCount;
             var totalDepositAmount = 0;
             var totalAppliedAmount = 0;
             var totalUnappliedAmount = 0;
 
-            for (var i = 0; i < deposits.length; i++) {
-                totalDepositAmount += deposits[i].depositAmount || 0;
-                totalAppliedAmount += deposits[i].amountApplied || 0;
-                totalUnappliedAmount += deposits[i].amountUnapplied || 0;
+            if (depositsIsTruncated) {
+                // Use pre-calculated aggregate total for unapplied amount
+                totalUnappliedAmount = depositResult.actualTotalUnapplied;
+                // Sum deposit and applied amounts from displayed records (best effort)
+                for (var i = 0; i < deposits.length; i++) {
+                    totalDepositAmount += deposits[i].depositAmount || 0;
+                    totalAppliedAmount += deposits[i].amountApplied || 0;
+                }
+            } else {
+                // Calculate all totals from line items
+                for (var i = 0; i < deposits.length; i++) {
+                    totalDepositAmount += deposits[i].depositAmount || 0;
+                    totalAppliedAmount += deposits[i].amountApplied || 0;
+                    totalUnappliedAmount += deposits[i].amountUnapplied || 0;
+                }
             }
 
             // Get unapplied credit memo data (needed for summary)
-            var creditMemos = searchUnappliedCreditMemos();
+            var creditMemos = searchUnappliedCreditMemos(balanceAsOf);
 
             // Calculate CM totals
             var totalCMs = creditMemos.length;
@@ -128,6 +144,13 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
 
             // Main container
             html += '<div class="portal-container">';
+
+            // Balance As Of Date Control
+            html += '<div class="balance-as-of-section">';
+            html += '<label class="balance-as-of-label">Balance As Of:</label>';
+            html += '<input type="date" id="balanceAsOfDate" class="balance-as-of-input" value="' + balanceAsOf + '">';
+            html += '<button type="button" id="loadResultsBtn" class="load-results-btn">Load Results</button>';
+            html += '</div>';
 
             // Combined Summary Row - both sections side by side
             html += '<div class="summary-row">';
@@ -173,7 +196,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
             // Data Section - Customer Deposits
             html += buildDataSection('deposits', 'True Customer Deposits', 
                 'Customer deposits linked to Kitchen Retail Sales orders that have not been fully applied', 
-                deposits, scriptUrl);
+                deposits, scriptUrl, depositsIsTruncated, totalDeposits);
 
             // Data Section - Credit Memos
             html += buildCreditMemoDataSection('creditmemos', 'Credit Memo Overpayments from Customer Deposits', 
@@ -217,13 +240,17 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
          * @param {string} scriptUrl - Suitelet URL
          * @returns {string} HTML for data section
          */
-        function buildDataSection(sectionId, title, description, data, scriptUrl) {
-            var totalRecords = data.length;
+        function buildDataSection(sectionId, title, description, data, scriptUrl, isTruncated, actualCount) {
+            var displayedRecords = data.length;
+            var totalRecords = isTruncated ? actualCount : displayedRecords;
+            var countDisplay = isTruncated 
+                ? 'Displaying ' + displayedRecords.toLocaleString() + ' of ' + totalRecords.toLocaleString() + ' records'
+                : totalRecords.toLocaleString();
             
             var html = '';
             html += '<div class="search-section" id="section-' + sectionId + '">';
             html += '<div class="search-title collapsible" data-section-id="' + sectionId + '">';
-            html += '<span>' + escapeHtml(title) + ' (' + totalRecords + ')</span>';
+            html += '<span>' + escapeHtml(title) + ' (' + countDisplay + ')' + (isTruncated ? ' <span style="color: #ffeb3b; font-size: 11px;">⚠ Totals calculated from all records</span>' : '') + '</span>';
             html += '<span class="toggle-icon" id="toggle-' + sectionId + '">−</span>';
             html += '</div>';
             html += '<div class="search-content" id="content-' + sectionId + '">';
@@ -484,10 +511,17 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
 
         /**
          * Searches for unapplied customer deposits linked to Kitchen Works sales orders
+         * @param {string} balanceAsOf - Date to filter transactions (YYYY-MM-DD format)
          * @returns {Array} Array of deposit objects
          */
-        function searchUnappliedDeposits() {
+        function searchUnappliedDeposits(balanceAsOf) {
             var deposits = [];
+            var result = {
+                deposits: [],
+                isTruncated: false,
+                actualCount: 0,
+                actualTotalUnapplied: 0
+            };
 
             try {
                 var sql = `
@@ -501,12 +535,14 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                          FROM previousTransactionLineLink ptll2
                          LEFT JOIN transaction depa2 ON ptll2.nextdoc = depa2.id
                          WHERE ptll2.previousdoc = t.id
-                           AND ptll2.linktype = 'DepAppl') AS amount_applied,
+                           AND ptll2.linktype = 'DepAppl'
+                           AND depa2.trandate <= TO_DATE('` + balanceAsOf + `', 'YYYY-MM-DD')) AS amount_applied,
                         (t.foreigntotal - (SELECT COALESCE(SUM(depa2.foreigntotal), 0)
                                            FROM previousTransactionLineLink ptll2
                                            LEFT JOIN transaction depa2 ON ptll2.nextdoc = depa2.id
                                            WHERE ptll2.previousdoc = t.id
-                                             AND ptll2.linktype = 'DepAppl')) AS amount_unapplied,
+                                             AND ptll2.linktype = 'DepAppl'
+                                             AND depa2.trandate <= TO_DATE('` + balanceAsOf + `', 'YYYY-MM-DD'))) AS amount_unapplied,
                         tl_dep.createdfrom AS so_id,
                         so.tranid AS so_number,
                         so.trandate AS so_date,
@@ -532,8 +568,8 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                     LEFT JOIN employee emp
                             ON so.employee = emp.id
                     WHERE t.type = 'CustDep'
-                      AND t.status != 'C'
                       AND i.incomeaccount = 338
+                      AND t.trandate <= TO_DATE('` + balanceAsOf + `', 'YYYY-MM-DD')
                     GROUP BY t.id,
                              t.tranid,
                              t.trandate,
@@ -547,6 +583,12 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                              d.name,
                              emp.firstname,
                              emp.lastname
+                    HAVING (t.foreigntotal - (SELECT COALESCE(SUM(depa2.foreigntotal), 0)
+                                              FROM previousTransactionLineLink ptll2
+                                              LEFT JOIN transaction depa2 ON ptll2.nextdoc = depa2.id
+                                              WHERE ptll2.previousdoc = t.id
+                                                AND ptll2.linktype = 'DepAppl'
+                                                AND depa2.trandate <= TO_DATE('` + balanceAsOf + `', 'YYYY-MM-DD'))) > 0
                     ORDER BY t.trandate DESC
                 `;
 
@@ -572,7 +614,61 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                     });
                 }
 
-                log.debug('Search Results', 'Found ' + deposits.length + ' unapplied deposits');
+                result.deposits = deposits;
+                result.actualCount = deposits.length;
+
+                // If we hit exactly 5000, results are likely truncated - run aggregate query for true totals
+                if (deposits.length === 5000) {
+                    result.isTruncated = true;
+                    log.debug('Results Truncated', 'Hit 5000 limit, running aggregate query for accurate totals');
+
+                    var aggregateSql = `
+                        SELECT 
+                            COUNT(*) AS total_count,
+                            SUM(amount_unapplied) AS total_unapplied
+                        FROM (
+                            SELECT 
+                                t.id,
+                                (t.foreigntotal - (SELECT COALESCE(SUM(depa2.foreigntotal), 0)
+                                                 FROM previousTransactionLineLink ptll2
+                                                 LEFT JOIN transaction depa2 ON ptll2.nextdoc = depa2.id
+                                                 WHERE ptll2.previousdoc = t.id
+                                                   AND ptll2.linktype = 'DepAppl'
+                                                   AND depa2.trandate <= TO_DATE('` + balanceAsOf + `', 'YYYY-MM-DD'))) AS amount_unapplied
+                            FROM transaction t
+                            INNER JOIN transactionline tl_dep
+                                    ON t.id = tl_dep.transaction
+                                   AND tl_dep.mainline = 'T'
+                            INNER JOIN transaction so
+                                    ON tl_dep.createdfrom = so.id
+                            INNER JOIN transactionline tl_so
+                                    ON so.id = tl_so.transaction
+                                   AND tl_so.mainline = 'F'
+                            INNER JOIN item i
+                                    ON tl_so.item = i.id
+                            WHERE t.type = 'CustDep'
+                              AND i.incomeaccount = 338
+                              AND t.trandate <= TO_DATE('` + balanceAsOf + `', 'YYYY-MM-DD')
+                            GROUP BY t.id, t.foreigntotal
+                            HAVING (t.foreigntotal - (SELECT COALESCE(SUM(depa2.foreigntotal), 0)
+                                                      FROM previousTransactionLineLink ptll2
+                                                      LEFT JOIN transaction depa2 ON ptll2.nextdoc = depa2.id
+                                                      WHERE ptll2.previousdoc = t.id
+                                                        AND ptll2.linktype = 'DepAppl'
+                                                        AND depa2.trandate <= TO_DATE('` + balanceAsOf + `', 'YYYY-MM-DD'))) > 0
+                        )
+                    `;
+
+                    var aggregateResults = query.runSuiteQL({ query: aggregateSql }).asMappedResults();
+                    if (aggregateResults.length > 0) {
+                        result.actualCount = parseInt(aggregateResults[0].total_count) || deposits.length;
+                        result.actualTotalUnapplied = parseFloat(aggregateResults[0].total_unapplied) || 0;
+                    }
+
+                    log.debug('Aggregate Results', 'Actual count: ' + result.actualCount + ', Actual total unapplied: ' + result.actualTotalUnapplied);
+                }
+
+                log.debug('Search Results', 'Found ' + deposits.length + ' unapplied deposits' + (result.isTruncated ? ' (truncated, actual: ' + result.actualCount + ')' : ''));
 
             } catch (e) {
                 log.error('Error Searching Deposits', {
@@ -581,14 +677,15 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 });
             }
 
-            return deposits;
+            return result;
         }
 
         /**
          * Searches for unapplied credit memos from overpayment deposits linked to Kitchen Works sales orders
+         * @param {string} balanceAsOf - Date to filter transactions (YYYY-MM-DD format)
          * @returns {Array} Array of credit memo objects
          */
-        function searchUnappliedCreditMemos() {
+        function searchUnappliedCreditMemos(balanceAsOf) {
             var creditMemos = [];
 
             try {
@@ -628,6 +725,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                       AND cm.status = 'A'
                       AND cm.custbody_overpayment_tran IS NOT NULL
                       AND i.incomeaccount = 338
+                      AND cm.trandate <= TO_DATE('` + balanceAsOf + `', 'YYYY-MM-DD')
                       AND (ABS(tal.amount) - COALESCE(tal.amountlinked, 0)) > 0
                     GROUP BY cm.id, cm.tranid, cm.trandate, cm.foreigntotal, cm.status,
                              cm.custbody_overpayment_tran, cd.tranid, tl_cd.createdfrom,
@@ -800,6 +898,15 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 /* Main container - avoid targeting global td */
                 '.portal-container { margin: 0; padding: 20px; border: none; background: transparent; position: relative; }' +
 
+                /* Balance As Of Section */
+                '.balance-as-of-section { background: linear-gradient(135deg, #1a237e 0%, #3949ab 100%); border-radius: 8px; padding: 12px 20px; margin-bottom: 20px; display: flex; align-items: center; justify-content: center; gap: 12px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15); }' +
+                '.balance-as-of-label { color: white; font-size: 15px; font-weight: bold; margin: 0; }' +
+                '.balance-as-of-input { padding: 6px 10px; border: 2px solid #fff; border-radius: 4px; font-size: 14px; font-weight: 600; color: #1a237e; background: #fff; cursor: pointer; }' +
+                '.balance-as-of-input:focus { outline: none; box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.5); }' +
+                '.load-results-btn { padding: 6px 16px; border: 2px solid #fff; border-radius: 4px; font-size: 14px; font-weight: 600; color: #1a237e; background: #fff; cursor: pointer; transition: background 0.2s, color 0.2s; }' +
+                '.load-results-btn:hover { background: #c5cae9; }' +
+                '.load-results-btn:active { background: #9fa8da; }' +
+
                 /* Summary Row - side by side sections */
                 '.summary-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0 30px 0; }' +
 
@@ -943,6 +1050,19 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 '    var cmDateInput = document.getElementById(\'cmPriorPeriodDate\');' +
                 '    if (cmDateInput) {' +
                 '        cmDateInput.addEventListener(\'change\', calculateCMPriorPeriodAmount);' +
+                '    }' +
+                '    /* Balance As Of Load Results button handler */' +
+                '    var loadResultsBtn = document.getElementById(\'loadResultsBtn\');' +
+                '    if (loadResultsBtn) {' +
+                '        loadResultsBtn.addEventListener(\'click\', function() {' +
+                '            var balanceAsOfInput = document.getElementById(\'balanceAsOfDate\');' +
+                '            var newDate = balanceAsOfInput ? balanceAsOfInput.value : null;' +
+                '            if (newDate) {' +
+                '                var baseUrl = \'' + scriptUrl + '\';' +
+                '                var separator = baseUrl.indexOf(\'?\') > -1 ? \'&\' : \'?\';' +
+                '                window.location.href = baseUrl + separator + \'balanceAsOf=\' + newDate;' +
+                '            }' +
+                '        });' +
                 '    }' +
                 '});' +
                 '' +
