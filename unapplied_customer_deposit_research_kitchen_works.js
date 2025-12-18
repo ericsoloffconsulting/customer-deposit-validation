@@ -225,6 +225,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
             html += '<th onclick="sortTable(\'' + sectionId + '\', 7)">Sales Order #</th>';
             html += '<th onclick="sortTable(\'' + sectionId + '\', 8)">SO Date</th>';
             html += '<th onclick="sortTable(\'' + sectionId + '\', 9)">SO Status</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 10)">Selling Location</th>';
             html += '</tr>';
             html += '</thead>';
             html += '<tbody>';
@@ -269,6 +270,9 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 // SO Status
                 html += '<td>' + escapeHtml(translateSOStatus(dep.soStatus)) + '</td>';
 
+                // Department
+                html += '<td>' + escapeHtml(dep.soDepartment || '-') + '</td>';
+
                 html += '</tr>';
             }
 
@@ -308,7 +312,8 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                         so.tranid AS so_number,
                         so.trandate AS so_date,
                         so.status AS so_status,
-                        c.altname AS customer_name
+                        c.altname AS customer_name,
+                        d.name AS so_department
                     FROM transaction t
                     INNER JOIN transactionline tl_dep
                             ON t.id = tl_dep.transaction
@@ -322,6 +327,8 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                            AND tl_so.mainline = 'F'
                     INNER JOIN item i
                             ON tl_so.item = i.id
+                    LEFT JOIN department d
+                            ON tl_so.department = d.id
                     WHERE t.type = 'CustDep'
                       AND t.status != 'C'
                       AND i.incomeaccount = 338
@@ -334,7 +341,8 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                              so.tranid,
                              so.trandate,
                              so.status,
-                             c.altname
+                             c.altname,
+                             d.name
                     ORDER BY t.trandate DESC
                 `;
 
@@ -354,7 +362,8 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                         soNumber: row.so_number,
                         soDate: row.so_date,
                         soStatus: row.so_status,
-                        customerName: row.customer_name
+                        customerName: row.customer_name,
+                        soDepartment: row.so_department
                     });
                 }
 
