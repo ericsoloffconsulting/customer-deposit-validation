@@ -165,10 +165,11 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
             html += '</div>';
             html += '<div class="summary-total">';
             html += '<div class="prior-period-header">';
-            html += '<span class="summary-total-label">Unapplied Prior To:</span>';
+            html += '<span class="summary-total-label">Received Prior To:</span>';
             html += '<input type="date" id="priorPeriodDate" class="prior-period-date-input" value="2024-12-31">';
             html += '</div>';
             html += '<span class="summary-total-amount" id="priorPeriodAmount">$0.00</span>';
+            html += '<span class="prior-period-helper">Calculate Customer Deposits 1+ Years Old for Tax Implications</span>';
             html += '</div>';
             html += '</div>';
             html += '</div>';
@@ -180,6 +181,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
             html += '<div class="summary-total">';
             html += '<span class="summary-total-label">Total Unapplied Amount:</span>';
             html += '<span class="summary-total-amount">' + formatCurrency(totalCMUnapplied) + '</span>';
+            html += '<span class="prior-period-helper">Credit Memos Converted from Customer Deposits Via Automated Process Began December 2025 and Continues Daily as Overpayment is Recognized</span>';
             html += '</div>';
             html += '<div class="summary-total">';
             html += '<div class="prior-period-header">';
@@ -187,6 +189,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
             html += '<input type="date" id="cmPriorPeriodDate" class="prior-period-date-input" value="2024-12-31">';
             html += '</div>';
             html += '<span class="summary-total-amount" id="cmPriorPeriodAmount">$0.00</span>';
+            html += '<span class="prior-period-helper">Overpayment Date is the Date of the SO\'s Final Fulfillment ("Actual Ship Date") or the Date the SO is Closed. Once the Sales Order\'s Final Invoice is Generated (SO Status: Billed) the CD is Converted and Booked Officially as an A/R Credit.</span>';
             html += '</div>';
             html += '</div>';
             html += '</div>';
@@ -250,7 +253,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
             var html = '';
             html += '<div class="search-section" id="section-' + sectionId + '">';
             html += '<div class="search-title collapsible" data-section-id="' + sectionId + '">';
-            html += '<span>' + escapeHtml(title) + ' (' + countDisplay + ')' + (isTruncated ? ' <span style="color: #ffeb3b; font-size: 11px;">⚠ Totals calculated from all records</span>' : '') + '</span>';
+            html += '<span>' + escapeHtml(title) + ' (' + countDisplay + ')' + (isTruncated ? ' <span style="color: #4CAF50; font-size: 11px;">⚠ Totals calculated from all records</span>' : '') + '</span>';
             html += '<span class="toggle-icon" id="toggle-' + sectionId + '">−</span>';
             html += '</div>';
             html += '<div class="search-content" id="content-' + sectionId + '">';
@@ -289,17 +292,18 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
             html += '<thead>';
             html += '<tr>';
             html += '<th onclick="sortTable(\'' + sectionId + '\', 0)">Deposit #</th>';
-            html += '<th onclick="sortTable(\'' + sectionId + '\', 1)">Deposit Date</th>';
-            html += '<th onclick="sortTable(\'' + sectionId + '\', 2)">Customer</th>';
-            html += '<th onclick="sortTable(\'' + sectionId + '\', 3)">Deposit Amount</th>';
-            html += '<th onclick="sortTable(\'' + sectionId + '\', 4)">Amount Applied</th>';
-            html += '<th onclick="sortTable(\'' + sectionId + '\', 5)">Amount Unapplied</th>';
-            html += '<th onclick="sortTable(\'' + sectionId + '\', 6)">Status</th>';
-            html += '<th onclick="sortTable(\'' + sectionId + '\', 7)">Sales Order #</th>';
-            html += '<th onclick="sortTable(\'' + sectionId + '\', 8)">SO Date</th>';
-            html += '<th onclick="sortTable(\'' + sectionId + '\', 9)">SO Status</th>';
-            html += '<th onclick="sortTable(\'' + sectionId + '\', 10)">Selling Location</th>';
-            html += '<th onclick="sortTable(\'' + sectionId + '\', 11)">Sales Rep</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 1)" class="aged-header" title="Received before cutoff date">⏰</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 2)">Deposit Date</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 3)">Customer</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 4)">Deposit Amount</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 5)">Amount Applied</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 6)">Amount Unapplied</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 7)">Status</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 8)">Sales Order #</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 9)">SO Date</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 10)">SO Status</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 11)">Selling Location</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 12)">Sales Rep</th>';
             html += '</tr>';
             html += '</thead>';
             html += '<tbody>';
@@ -312,6 +316,9 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
 
                 // Deposit # with link
                 html += '<td><a href="/app/accounting/transactions/custdep.nl?id=' + dep.depositId + '" target="_blank">' + escapeHtml(dep.depositNumber) + '</a></td>';
+
+                // Aged icon (placeholder - will be updated by client-side script)
+                html += '<td class="aged-icon-cell" data-date="' + (dep.depositDate || '') + '"></td>';
 
                 // Deposit Date
                 html += '<td data-date="' + (dep.depositDate || '') + '">' + formatDate(dep.depositDate) + '</td>';
@@ -926,6 +933,10 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 '.prior-period-header { display: flex; align-items: center; justify-content: center; flex-wrap: nowrap; gap: 6px; }' +
                 '.prior-period-date-input { padding: 4px 6px; border: 1px solid #4CAF50; border-radius: 4px; font-size: 12px; color: #333; background: #fff; cursor: pointer; }' +
                 '.prior-period-date-input:focus { outline: none; box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.3); }' +
+                '.prior-period-helper { display: block; font-size: 12px; font-weight: normal; color: #666; font-style: italic; margin-top: 6px; }' +
+                '.aged-header { font-size: 14px; cursor: pointer; width: 30px; min-width: 30px; text-align: center; }' +
+                '.aged-icon-cell { text-align: center; font-size: 12px; width: 30px; min-width: 30px; }' +
+                '.aged-icon { color: #F57C00; opacity: 0.7; }' +
 
                 /* Search/Data Sections */
                 '.search-section { margin-bottom: 30px; }' +
@@ -1066,7 +1077,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 '    }' +
                 '});' +
                 '' +
-                '/* Calculate unapplied amount for deposits prior to selected date */' +
+                '/* Calculate unapplied amount for deposits prior to selected date and update aged icons */' +
                 'function calculatePriorPeriodAmount() {' +
                 '    var dateInput = document.getElementById(\'priorPeriodDate\');' +
                 '    var amountSpan = document.getElementById(\'priorPeriodAmount\');' +
@@ -1080,16 +1091,22 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 '    var total = 0;' +
                 '    ' +
                 '    for (var i = 0; i < rows.length; i++) {' +
-                '        var dateCell = rows[i].cells[1];' +
-                '        var unappliedCell = rows[i].cells[5];' +
-                '        var dateStr = dateCell.getAttribute(\'data-date\');' +
+                '        var agedCell = rows[i].cells[1];' +
+                '        var dateCell = rows[i].cells[2];' +
+                '        var unappliedCell = rows[i].cells[6];' +
+                '        var dateStr = agedCell.getAttribute(\'data-date\');' +
                 '        ' +
                 '        if (dateStr) {' +
                 '            var rowDate = new Date(dateStr);' +
                 '            if (rowDate <= cutoffDate) {' +
                 '                var amountText = unappliedCell.textContent.replace(/[^0-9.-]/g, \'\');' +
                 '                total += parseFloat(amountText) || 0;' +
+                '                agedCell.innerHTML = \'<span class="aged-icon" title="Received before \' + dateInput.value + \'">\u23f0</span>\';' +
+                '            } else {' +
+                '                agedCell.innerHTML = \'\';' +
                 '            }' +
+                '        } else {' +
+                '            agedCell.innerHTML = \'\';' +
                 '        }' +
                 '    }' +
                 '    ' +

@@ -174,24 +174,29 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
             html += '<div class="summary-total">';
             html += '<span class="summary-total-label">Total Unapplied Amount:</span>';
             html += '<span class="summary-total-amount">' + formatCurrency(totalUnappliedAmount) + '</span>';
-            html += '<div class="je-variance-note">';
-            html += '<span class="je-variance-label">Total With JE Go-Live Variance:</span>';
-            html += '<a href="#section-journalentries" class="je-variance-amount je-variance-link" onclick="expandJESection()">' + formatCurrency(adjustedTotal) + ' (' + jeDetails.length + ' JE lines)</a>';
+            html += '<div class="validation-comparison-row">';
+            html += '<div class="validation-column">';
+            html += '<span class="validation-column-label">Total With JE Go-Live Variance</span>';
+            html += '<a href="#section-journalentries" class="validation-column-amount je-variance-link" onclick="expandJESection()">' + formatCurrency(adjustedTotal) + '</a>';
+            html += '<span class="validation-column-detail">(' + jeDetails.length + ' JE lines)</span>';
             html += '</div>';
-            html += '<div class="gl-validation-row">';
-            html += '<span class="gl-validation-label">GL Balance (Account 850):</span>';
-            html += '<span class="gl-validation-amount">' + formatCurrency(glBalance) + '</span>';
-            html += '<span class="gl-validation-status ' + (hasVariance ? 'variance-error' : 'no-variance') + '">';
+            html += '<div class="validation-divider"></div>';
+            html += '<div class="validation-column">';
+            html += '<span class="validation-column-label">GL Balance (Account 200800)</span>';
+            html += '<span class="validation-column-amount gl-amount">' + formatCurrency(glBalance) + '</span>';
+            html += '<span class="validation-column-detail ' + (hasVariance ? 'variance-error' : 'no-variance') + '">';
             html += hasVariance ? '⚠ Variance: ' + formatCurrency(variance) : '✓ No Variance';
             html += '</span>';
             html += '</div>';
             html += '</div>';
+            html += '</div>';
             html += '<div class="summary-total">';
             html += '<div class="prior-period-header">';
-            html += '<span class="summary-total-label">Unapplied Prior To:</span>';
+            html += '<span class="summary-total-label">Received Prior To:</span>';
             html += '<input type="date" id="priorPeriodDate" class="prior-period-date-input" value="2024-12-31">';
             html += '</div>';
             html += '<span class="summary-total-amount" id="priorPeriodAmount">$0.00</span>';
+            html += '<span class="prior-period-helper">Calculate Customer Deposits 1+ Years Old for Tax Implications</span>';
             html += '</div>';
             html += '</div>';
             html += '</div>';
@@ -203,6 +208,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
             html += '<div class="summary-total">';
             html += '<span class="summary-total-label">Total Unapplied Amount:</span>';
             html += '<span class="summary-total-amount">' + formatCurrency(totalCMUnapplied) + '</span>';
+            html += '<span class="prior-period-helper">Credit Memos Converted from Customer Deposits Via Automated Process Began December 2025 and Continues Daily as Overpayment is Recognized</span>';
             html += '</div>';
             html += '<div class="summary-total">';
             html += '<div class="prior-period-header">';
@@ -210,6 +216,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
             html += '<input type="date" id="cmPriorPeriodDate" class="prior-period-date-input" value="2024-12-31">';
             html += '</div>';
             html += '<span class="summary-total-amount" id="cmPriorPeriodAmount">$0.00</span>';
+            html += '<span class="prior-period-helper">Overpayment Date is the Date of the SO\'s Final Fulfillment ("Actual Ship Date") or the Date the SO is Closed. Once the Sales Order\'s Final Invoice is Generated (SO Status: Billed) the CD is Converted and Booked Officially as an A/R Credit.</span>';
             html += '</div>';
             html += '</div>';
             html += '</div>';
@@ -278,7 +285,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
             var html = '';
             html += '<div class="search-section" id="section-' + sectionId + '">';
             html += '<div class="search-title collapsible" data-section-id="' + sectionId + '">';
-            html += '<span>' + escapeHtml(title) + ' (' + countDisplay + ')' + (isTruncated ? ' <span style="color: #ffeb3b; font-size: 11px;">⚠ Totals calculated from all records</span>' : '') + '</span>';
+            html += '<span>' + escapeHtml(title) + ' (' + countDisplay + ')' + (isTruncated ? ' <span style="color: #4CAF50; font-size: 11px;">⚠ Totals calculated from all records</span>' : '') + '</span>';
             html += '<span class="toggle-icon" id="toggle-' + sectionId + '">−</span>';
             html += '</div>';
             html += '<div class="search-content" id="content-' + sectionId + '">';
@@ -317,17 +324,18 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
             html += '<thead>';
             html += '<tr>';
             html += '<th onclick="sortTable(\'' + sectionId + '\', 0)">Deposit #</th>';
-            html += '<th onclick="sortTable(\'' + sectionId + '\', 1)">Deposit Date</th>';
-            html += '<th onclick="sortTable(\'' + sectionId + '\', 2)">Customer</th>';
-            html += '<th onclick="sortTable(\'' + sectionId + '\', 3)">Deposit Amount</th>';
-            html += '<th onclick="sortTable(\'' + sectionId + '\', 4)">Amount Applied</th>';
-            html += '<th onclick="sortTable(\'' + sectionId + '\', 5)">Amount Unapplied</th>';
-            html += '<th onclick="sortTable(\'' + sectionId + '\', 6)">Status</th>';
-            html += '<th onclick="sortTable(\'' + sectionId + '\', 7)">Sales Order #</th>';
-            html += '<th onclick="sortTable(\'' + sectionId + '\', 8)">SO Date</th>';
-            html += '<th onclick="sortTable(\'' + sectionId + '\', 9)">SO Status</th>';
-            html += '<th onclick="sortTable(\'' + sectionId + '\', 10)">Selling Location</th>';
-            html += '<th onclick="sortTable(\'' + sectionId + '\', 11)">Sales Rep</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 1)" class="aged-header" title="Received before cutoff date">⏰</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 2)">Deposit Date</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 3)">Customer</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 4)">Deposit Amount</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 5)">Amount Applied</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 6)">Amount Unapplied</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 7)">Status</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 8)">Sales Order #</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 9)">SO Date</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 10)">SO Status</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 11)">Selling Location</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 12)">Sales Rep</th>';
             html += '</tr>';
             html += '</thead>';
             html += '<tbody>';
@@ -340,6 +348,9 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
 
                 // Deposit # with link
                 html += '<td><a href="/app/accounting/transactions/custdep.nl?id=' + dep.depositId + '" target="_blank">' + escapeHtml(dep.depositNumber) + '</a></td>';
+
+                // Aged icon (placeholder - will be updated by client-side script)
+                html += '<td class="aged-icon-cell" data-date="' + (dep.depositDate || '') + '"></td>';
 
                 // Deposit Date
                 html += '<td data-date="' + (dep.depositDate || '') + '">' + formatDate(dep.depositDate) + '</td>';
@@ -1131,20 +1142,24 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 '.summary-total { background: #fff; border: 2px solid #4CAF50; border-radius: 6px; padding: 12px 10px; text-align: center; font-size: 18px; font-weight: bold; }' +
                 '.summary-total-label { color: #333; font-size: 12px; font-weight: 600; }' +
                 '.summary-total-amount { color: #4CAF50; font-size: 24px; display: block; margin-top: 8px; }' +
-                '.je-variance-note { margin-top: 10px; padding-top: 8px; border-top: 1px dashed #ccc; }' +
-                '.je-variance-label { font-size: 10px; font-style: italic; color: #666; display: block; }' +
-                '.je-variance-amount { font-size: 14px; font-style: italic; color: #607D8B; display: block; margin-top: 4px; }' +
+                '.validation-comparison-row { display: flex; margin-top: 12px; padding-top: 10px; border-top: 1px dashed #ccc; }' +
+                '.validation-column { flex: 1; text-align: center; padding: 0 8px; }' +
+                '.validation-divider { width: 1px; background: #ccc; margin: 0 4px; }' +
+                '.validation-column-label { font-size: 10px; color: #666; display: block; font-weight: 600; }' +
+                '.validation-column-amount { font-size: 16px; font-weight: bold; color: #607D8B; display: block; margin-top: 4px; }' +
+                '.validation-column-amount.gl-amount { color: #1976D2; }' +
+                '.validation-column-detail { font-size: 10px; color: #888; display: block; margin-top: 2px; }' +
                 '.je-variance-link { text-decoration: none; cursor: pointer; }' +
                 '.je-variance-link:hover { text-decoration: underline; color: #455A64; }' +
-                '.gl-validation-row { margin-top: 10px; padding-top: 8px; border-top: 1px dashed #4CAF50; display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }' +
-                '.gl-validation-label { font-size: 10px; font-weight: 600; color: #333; }' +
-                '.gl-validation-amount { font-size: 14px; font-weight: bold; color: #1976D2; }' +
-                '.gl-validation-status { font-size: 12px; font-weight: bold; padding: 2px 8px; border-radius: 4px; }' +
-                '.gl-validation-status.no-variance { background: #E8F5E9; color: #2E7D32; }' +
-                '.gl-validation-status.variance-error { background: #FFEBEE; color: #C62828; }' +
+                '.validation-column-detail.no-variance { color: #2E7D32; font-weight: bold; }' +
+                '.validation-column-detail.variance-error { color: #C62828; font-weight: bold; }' +
                 '.prior-period-header { display: flex; align-items: center; justify-content: center; flex-wrap: nowrap; gap: 6px; }' +
                 '.prior-period-date-input { padding: 4px 6px; border: 1px solid #4CAF50; border-radius: 4px; font-size: 12px; color: #333; background: #fff; cursor: pointer; }' +
                 '.prior-period-date-input:focus { outline: none; box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.3); }' +
+                '.prior-period-helper { display: block; font-size: 12px; font-weight: normal; color: #666; font-style: italic; margin-top: 6px; }' +
+                '.aged-header { font-size: 14px; cursor: pointer; width: 30px; min-width: 30px; text-align: center; }' +
+                '.aged-icon-cell { text-align: center; font-size: 12px; width: 30px; min-width: 30px; }' +
+                '.aged-icon { color: #F57C00; opacity: 0.7; }' +
 
                 /* Search/Data Sections */
                 '.search-section { margin-bottom: 30px; }' +
@@ -1296,7 +1311,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 '    }' +
                 '});' +
                 '' +
-                '/* Calculate unapplied amount for deposits prior to selected date */' +
+                '/* Calculate unapplied amount for deposits prior to selected date and update aged icons */' +
                 'function calculatePriorPeriodAmount() {' +
                 '    var dateInput = document.getElementById(\'priorPeriodDate\');' +
                 '    var amountSpan = document.getElementById(\'priorPeriodAmount\');' +
@@ -1310,16 +1325,22 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 '    var total = 0;' +
                 '    ' +
                 '    for (var i = 0; i < rows.length; i++) {' +
-                '        var dateCell = rows[i].cells[1];' +
-                '        var unappliedCell = rows[i].cells[5];' +
-                '        var dateStr = dateCell.getAttribute(\'data-date\');' +
+                '        var agedCell = rows[i].cells[1];' +
+                '        var dateCell = rows[i].cells[2];' +
+                '        var unappliedCell = rows[i].cells[6];' +
+                '        var dateStr = agedCell.getAttribute(\'data-date\');' +
                 '        ' +
                 '        if (dateStr) {' +
                 '            var rowDate = new Date(dateStr);' +
                 '            if (rowDate <= cutoffDate) {' +
                 '                var amountText = unappliedCell.textContent.replace(/[^0-9.-]/g, \'\');' +
                 '                total += parseFloat(amountText) || 0;' +
+                '                agedCell.innerHTML = \'<span class="aged-icon" title="Received before \' + dateInput.value + \'">⏰</span>\';' +
+                '            } else {' +
+                '                agedCell.innerHTML = \'\';' +
                 '            }' +
+                '        } else {' +
+                '            agedCell.innerHTML = \'\';' +
                 '        }' +
                 '    }' +
                 '    ' +
