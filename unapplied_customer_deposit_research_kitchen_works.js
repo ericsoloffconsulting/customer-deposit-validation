@@ -272,6 +272,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
             html += '<th onclick="sortTable(\'' + sectionId + '\', 8)">SO Date</th>';
             html += '<th onclick="sortTable(\'' + sectionId + '\', 9)">SO Status</th>';
             html += '<th onclick="sortTable(\'' + sectionId + '\', 10)">Selling Location</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 11)">Sales Rep</th>';
             html += '</tr>';
             html += '</thead>';
             html += '<tbody>';
@@ -318,6 +319,9 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
 
                 // Department
                 html += '<td>' + escapeHtml(dep.soDepartment || '-') + '</td>';
+
+                // Sales Rep
+                html += '<td>' + escapeHtml(dep.salesrepName || '-') + '</td>';
 
                 html += '</tr>';
             }
@@ -398,6 +402,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
             html += '<th onclick="sortTable(\'' + sectionId + '\', 13)">Unbilled Orders</th>';
             html += '<th onclick="sortTable(\'' + sectionId + '\', 14)">Deposit Balance</th>';
             html += '<th onclick="sortTable(\'' + sectionId + '\', 15)">A/R Balance</th>';
+            html += '<th onclick="sortTable(\'' + sectionId + '\', 16)">Sales Rep</th>';
             html += '</tr>';
             html += '</thead>';
             html += '<tbody>';
@@ -464,6 +469,9 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 // A/R Balance
                 html += '<td class="amount">' + formatCurrencyWithSign(cm.arBalance) + '</td>';
 
+                // Sales Rep
+                html += '<td>' + escapeHtml(cm.salesrepName || '-') + '</td>';
+
                 html += '</tr>';
             }
 
@@ -504,7 +512,8 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                         so.trandate AS so_date,
                         so.status AS so_status,
                         c.altname AS customer_name,
-                        d.name AS so_department
+                        d.name AS so_department,
+                        emp.firstname || ' ' || emp.lastname AS salesrep_name
                     FROM transaction t
                     INNER JOIN transactionline tl_dep
                             ON t.id = tl_dep.transaction
@@ -520,6 +529,8 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                             ON tl_so.item = i.id
                     LEFT JOIN department d
                             ON tl_so.department = d.id
+                    LEFT JOIN employee emp
+                            ON so.employee = emp.id
                     WHERE t.type = 'CustDep'
                       AND t.status != 'C'
                       AND i.incomeaccount = 338
@@ -533,7 +544,9 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                              so.trandate,
                              so.status,
                              c.altname,
-                             d.name
+                             d.name,
+                             emp.firstname,
+                             emp.lastname
                     ORDER BY t.trandate DESC
                 `;
 
@@ -554,7 +567,8 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                         soDate: row.so_date,
                         soStatus: row.so_status,
                         customerName: row.customer_name,
-                        soDepartment: row.so_department
+                        soDepartment: row.so_department,
+                        salesrepName: row.salesrep_name
                     });
                 }
 
@@ -598,7 +612,8 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                         (ABS(tal.amount) - COALESCE(tal.amountlinked, 0)) AS amount_unapplied,
                         c.unbilledOrdersSearch AS unbilled_orders,
                         c.depositBalanceSearch AS deposit_balance,
-                        c.balanceSearch AS ar_balance
+                        c.balanceSearch AS ar_balance,
+                        emp.firstname || ' ' || emp.lastname AS salesrep_name
                     FROM transaction cm
                     INNER JOIN transactionaccountingline tal ON cm.id = tal.transaction AND tal.credit IS NOT NULL
                     INNER JOIN transaction cd ON cm.custbody_overpayment_tran = cd.id
@@ -608,6 +623,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                     INNER JOIN transactionline tl_so ON so.id = tl_so.transaction AND tl_so.mainline = 'F'
                     INNER JOIN item i ON tl_so.item = i.id
                     LEFT JOIN department d ON tl_so.department = d.id
+                    LEFT JOIN employee emp ON so.employee = emp.id
                     WHERE cm.type = 'CustCred'
                       AND cm.status = 'A'
                       AND cm.custbody_overpayment_tran IS NOT NULL
@@ -617,7 +633,8 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                              cm.custbody_overpayment_tran, cd.tranid, tl_cd.createdfrom,
                              cm.custbody_overpayment_date, cm.custbody_overpayment_cd_date,
                              so.tranid, so.trandate, c.altname, d.name, tal.amount, tal.amountlinked,
-                             c.unbilledOrdersSearch, c.depositBalanceSearch, c.balanceSearch
+                             c.unbilledOrdersSearch, c.depositBalanceSearch, c.balanceSearch,
+                             emp.firstname, emp.lastname
                     ORDER BY cm.trandate DESC
                 `;
 
@@ -648,7 +665,8 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                         soDepartment: row.so_department,
                         unbilledOrders: parseFloat(row.unbilled_orders) || 0,
                         depositBalance: parseFloat(row.deposit_balance) || 0,
-                        arBalance: parseFloat(row.ar_balance) || 0
+                        arBalance: parseFloat(row.ar_balance) || 0,
+                        salesrepName: row.salesrep_name
                     });
                 }
 
