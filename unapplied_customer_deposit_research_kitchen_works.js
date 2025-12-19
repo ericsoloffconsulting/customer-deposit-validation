@@ -85,19 +85,64 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
          * @returns {string} HTML content
          */
         function buildPageHTML(params) {
-            var scriptUrl = url.resolveScript({
-                scriptId: runtime.getCurrentScript().id,
-                deploymentId: runtime.getCurrentScript().deploymentId,
-                returnExternalUrl: false
-            });
+            try {
+                log.debug('buildPageHTML Start', 'Params: ' + JSON.stringify(params));
+                
+                var scriptUrl = url.resolveScript({
+                    scriptId: runtime.getCurrentScript().id,
+                    deploymentId: runtime.getCurrentScript().deploymentId,
+                    returnExternalUrl: false
+                });
 
-            // Get balance as of date from params, default to 12/31/2025
-            var balanceAsOf = (params.balanceAsOf && params.balanceAsOf.trim()) ? params.balanceAsOf.trim() : '2025-12-31';
+                // Check if data should be loaded
+                var shouldLoadData = params.loadData === 'T';
+                log.debug('Load Data Decision', 'shouldLoadData: ' + shouldLoadData);
 
-            // Get unapplied deposit data
+                // Get balance as of date from params, default to 12/31/2025
+                var balanceAsOf = (params.balanceAsOf && params.balanceAsOf.trim()) ? params.balanceAsOf.trim() : '2025-12-31';
+                log.debug('Balance As Of', balanceAsOf);
+
+                var html = '';
+
+            // Loading spinner overlay - FIRST with inline styles so it renders immediately
+            html += '<div id="loadingOverlay" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(255,255,255,0.95);display:flex;flex-direction:column;justify-content:center;align-items:center;z-index:9999;display:none;">';
+            html += '<div style="width:50px;height:50px;border:4px solid #e0e0e0;border-top:4px solid #4CAF50;border-radius:50%;animation:spin 1s linear infinite;"></div>';
+            html += '<div style="margin-top:15px;font-size:16px;color:#333;font-weight:500;">Loading data...</div>';
+            html += '<style>@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}</style>';
+            html += '</div>';
+
+            // If data not requested, show initial page with Load button
+            if (!shouldLoadData) {
+                var separator = scriptUrl.indexOf('?') > -1 ? '&' : '?';
+                var loadDataUrl = scriptUrl + separator + 'loadData=T&balanceAsOf=' + balanceAsOf;
+                
+                html += '<style>' + getStyles() + '</style>';
+                html += '<div class="portal-container">';
+                html += '<div style="text-align:center;padding:80px 20px;">';
+                html += '<h1 style="color:#1a237e;font-size:32px;margin-bottom:20px;">Unapplied Customer Deposit Research - Kitchen Works</h1>';
+                html += '<p style="color:#666;font-size:16px;margin-bottom:30px;">Click the button below to load customer deposit data</p>';
+                html += '<button onclick="loadCustomerData()" id="loadDataBtn" style="padding:15px 40px;font-size:18px;font-weight:bold;color:#fff;background:#4CAF50;border:none;border-radius:6px;cursor:pointer;box-shadow:0 2px 8px rgba(76,175,80,0.3);transition:all 0.2s;">Load Customer Deposit Data</button>';
+                html += '</div>';
+                html += '</div>';
+                html += '<script>';
+                html += 'function loadCustomerData() {';
+                html += '  var btn = document.getElementById("loadDataBtn");';
+                html += '  btn.disabled = true;';
+                html += '  btn.textContent = "Loading...";';
+                html += '  var overlay = document.getElementById("loadingOverlay");';
+                html += '  if (overlay) overlay.style.display = "flex";';
+                html += '  window.location.href = "' + loadDataUrl + '";';
+                html += '}';
+                html += '</script>';
+                return html;
+            }
+
+            // Data requested - load everything
+            log.debug('Data Loading', 'Starting to load deposit data for ' + balanceAsOf);
             var depositResult = searchUnappliedDeposits(balanceAsOf);
             var deposits = depositResult.deposits;
             var depositsIsTruncated = depositResult.isTruncated;
+            log.debug('Deposits Loaded', 'Count: ' + deposits.length);
 
             // Calculate totals - use aggregate if truncated, otherwise sum from line items
             var totalDeposits = depositResult.actualCount;
@@ -136,8 +181,6 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 totalCMApplied += creditMemos[j].amountApplied || 0;
                 totalCMUnapplied += creditMemos[j].amountUnapplied || 0;
             }
-
-            var html = '';
 
             // Add styles
             html += '<style>' + getStyles() + '</style>';
@@ -214,7 +257,25 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
             // Add JavaScript
             html += '<script>' + getJavaScript(scriptUrl) + '</script>';
 
+            log.debug('buildPageHTML Complete', 'HTML generated successfully');
             return html;
+            
+            } catch (e) {
+                log.error('Error in buildPageHTML', {
+                    error: e.message,
+                    stack: e.stack,
+                    params: JSON.stringify(params)
+                });
+                // Return error page
+                var errorHtml = '<style>body{font-family:Arial,sans-serif;padding:40px;}</style>';
+                errorHtml += '<div style="max-width:600px;margin:0 auto;">';
+                errorHtml += '<h1 style="color:#d32f2f;">Error Loading Portal</h1>';
+                errorHtml += '<p><strong>Error:</strong> ' + escapeHtml(e.message) + '</p>';
+                errorHtml += '<p><strong>Details:</strong> Check execution log for details.</p>';
+                errorHtml += '<pre style="background:#f5f5f5;padding:15px;overflow:auto;">' + escapeHtml(e.stack || 'No stack trace available') + '</pre>';
+                errorHtml += '</div>';
+                return errorHtml;
+            }
         }
 
         /**
@@ -902,6 +963,13 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 '.bglt { border: none !important; }' +
                 '.smalltextnolink { border: none !important; }' +
 
+                /* Loading Spinner Overlay */
+                '.loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255, 255, 255, 0.9); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 9999; }' +
+                '.loading-overlay.hidden { display: none; }' +
+                '.loading-spinner { width: 50px; height: 50px; border: 4px solid #e0e0e0; border-top: 4px solid #4CAF50; border-radius: 50%; animation: spin 1s linear infinite; }' +
+                '@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }' +
+                '.loading-text { margin-top: 15px; font-size: 16px; color: #333; font-weight: 500; }' +
+
                 /* Main container - avoid targeting global td */
                 '.portal-container { margin: 0; padding: 20px; border: none; background: transparent; position: relative; }' +
 
@@ -1050,7 +1118,25 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 '}' +
 
                 /* Restore state on page load */
+                '/* Show loading spinner */' +
+                'function showLoading(message) {' +
+                '    var overlay = document.getElementById(\'loadingOverlay\');' +
+                '    if (overlay) {' +
+                '        var textEl = overlay.querySelector(\'div:last-child\');' +
+                '        if (textEl && message) textEl.textContent = message;' +
+                '        overlay.style.display = \'flex\';' +
+                '    }' +
+                '}' +
+                '' +
+                '/* Hide loading spinner */' +
+                'function hideLoading() {' +
+                '    var overlay = document.getElementById(\'loadingOverlay\');' +
+                '    if (overlay) overlay.style.display = \'none\';' +
+                '}' +
+                '' +
                 'document.addEventListener(\'DOMContentLoaded\', function() {' +
+                '    /* Hide loading spinner once page is ready */' +
+                '    hideLoading();' +
                 '    restoreExpandedState();' +
                 '    calculatePriorPeriodAmount();' +
                 '    calculateCMPriorPeriodAmount();' +
@@ -1069,9 +1155,10 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                 '            var balanceAsOfInput = document.getElementById(\'balanceAsOfDate\');' +
                 '            var newDate = balanceAsOfInput ? balanceAsOfInput.value : null;' +
                 '            if (newDate) {' +
+                '                showLoading(\'Loading results for \' + newDate + \'...\');' +
                 '                var baseUrl = \'' + scriptUrl + '\';' +
                 '                var separator = baseUrl.indexOf(\'?\') > -1 ? \'&\' : \'?\';' +
-                '                window.location.href = baseUrl + separator + \'balanceAsOf=\' + newDate;' +
+                '                window.location.href = baseUrl + separator + \'loadData=T&balanceAsOf=\' + newDate;' +
                 '            }' +
                 '        });' +
                 '    }' +
