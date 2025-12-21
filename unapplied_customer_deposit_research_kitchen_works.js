@@ -258,6 +258,13 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
             // Get unapplied credit memo data (needed for summary)
             var creditMemos = searchUnappliedCreditMemos(balanceAsOf);
 
+            // Get AI analysis lookup for icon display (only if we have CMs)
+            var aiAnalysisLookup = {};
+            if (creditMemos.length > 0) {
+                var cmIds = creditMemos.map(function(cm) { return cm.cmId; });
+                aiAnalysisLookup = getAIAnalysisLookup(cmIds);
+            }
+
             // Calculate CM totals
             var totalCMs = creditMemos.length;
             var totalCMAmount = 0;
@@ -362,7 +369,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
             // Data Section - Credit Memos
             html += buildCreditMemoDataSection('creditmemos', 'Credit Memo Overpayments from Customer Deposits', 
                 'Unapplied credit memos created from overpayment customer deposits linked to Kitchen Retail Sales orders', 
-                creditMemos, scriptUrl);
+                creditMemos, scriptUrl, aiAnalysisLookup);
 
             html += '</div>'; // Close portal-container
 
@@ -568,9 +575,10 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
          * @param {string} description - Section description
          * @param {Array} data - Data array
          * @param {string} scriptUrl - Suitelet URL
+         * @param {Object} aiAnalysisLookup - Lookup object for CMs with AI analysis
          * @returns {string} HTML for data section
          */
-        function buildCreditMemoDataSection(sectionId, title, description, data, scriptUrl) {
+        function buildCreditMemoDataSection(sectionId, title, description, data, scriptUrl, aiAnalysisLookup) {
             var totalRecords = data.length;
             
             var html = '';
@@ -592,7 +600,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 html += '</div>';
                 html += '<span class="search-results-count" id="searchCount-' + sectionId + '"></span>';
                 html += '</div>';
-                html += buildCreditMemoTable(data, scriptUrl, sectionId);
+                html += buildCreditMemoTable(data, scriptUrl, sectionId, aiAnalysisLookup);
             }
             
             html += '</div>';
@@ -605,9 +613,10 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
          * @param {Array} creditMemos - Credit memo data
          * @param {string} scriptUrl - Suitelet URL
          * @param {string} sectionId - Section identifier
+         * @param {Object} aiAnalysisLookup - Lookup object for CMs with AI analysis
          * @returns {string} HTML table
          */
-        function buildCreditMemoTable(creditMemos, scriptUrl, sectionId) {
+        function buildCreditMemoTable(creditMemos, scriptUrl, sectionId, aiAnalysisLookup) {
             var html = '';
 
             html += '<div class="table-container">';
@@ -642,8 +651,14 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
 
                 html += '<tr class="' + rowClass + '" id="cm-row-' + cm.cmId + '">';
 
-                // SO to Invoice Comparison action button
-                html += '<td class="action-btn-cell"><button type="button" class="so-inv-compare-btn" onclick="showSOInvoiceComparison(' + cm.cmId + ')" title="Compare SO vs Invoice Line Items">SO↔INV</button></td>';
+                // SO to Invoice Comparison action button with AI badge
+                var hasAI = aiAnalysisLookup && aiAnalysisLookup[cm.cmId];
+                html += '<td class="action-btn-cell">';
+                html += '<button type="button" class="so-inv-compare-btn" onclick="showSOInvoiceComparison(' + cm.cmId + ')" title="Compare SO vs Invoice Line Items">SO↔INV</button>';
+                if (hasAI) {
+                    html += '<br><span class="ai-badge" title="AI analysis available">AI</span>';
+                }
+                html += '</td>';
 
                 // Credit Memo # with link
                 html += '<td><a href="/app/accounting/transactions/custcred.nl?id=' + cm.cmId + '" target="_blank">' + escapeHtml(cm.cmNumber) + '</a></td>';
@@ -1271,9 +1286,11 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '.error-msg { background-color: #f8d7da; color: #721c24; padding: 12px; border: 1px solid #f5c6cb; border-radius: 6px; margin: 15px 0; font-size: 13px; }' +
 
                 /* SO to Invoice Comparison Button */
-                '.so-inv-compare-btn { padding: 4px 8px; font-size: 11px; font-weight: 600; color: #fff; background: linear-gradient(135deg, #1976d2, #1565c0); border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; transition: all 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }' +
+                '.so-inv-compare-btn { padding: 4px 8px; font-size: 11px; font-weight: 600; color: #fff; background: linear-gradient(135deg, #1976d2, #1565c0); border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; transition: all 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.2); display: block; margin: 0 auto; }' +
                 '.so-inv-compare-btn:hover { background: linear-gradient(135deg, #1565c0, #0d47a1); transform: translateY(-1px); box-shadow: 0 2px 5px rgba(0,0,0,0.25); }' +
                 '.action-btn-cell { text-align: center !important; padding: 4px !important; }' +
+                '.ai-badge { display: block; margin: 6px auto 0; padding: 4px 8px; font-size: 11px; font-weight: 600; color: #fff; background: linear-gradient(135deg, #7c4dff, #651fff); border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px; box-shadow: 0 1px 3px rgba(124,77,255,0.3); cursor: help; transition: all 0.2s; }' +
+                '.ai-badge:hover { background: linear-gradient(135deg, #651fff, #6200ea); box-shadow: 0 2px 4px rgba(124,77,255,0.4); transform: translateY(-1px); }' +
 
                 /* SO to Invoice Comparison Modal */
                 '.comparison-modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 99998; }' +
@@ -2846,6 +2863,44 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
             } catch (e) {
                 log.error('Error loading AI analysis', { error: e.message, stack: e.stack, creditMemoId: creditMemoId });
                 return { found: false, error: e.message };
+            }
+        }
+
+        /**
+         * Get AI analysis status for multiple credit memos (for icon display)
+         * @param {Array} cmIds - Array of Credit Memo internal IDs
+         * @returns {Object} Lookup object { cmId: true, ... } for CMs with AI analysis
+         */
+        function getAIAnalysisLookup(cmIds) {
+            try {
+                if (!cmIds || cmIds.length === 0) {
+                    return {};
+                }
+
+                var aiSearch = search.create({
+                    type: 'customrecord_ai_analysis_stored_response',
+                    filters: [
+                        ['custrecord_linked_transaction', 'anyof', cmIds]
+                    ],
+                    columns: ['custrecord_linked_transaction']
+                });
+
+                var results = aiSearch.run().getRange({ start: 0, end: 1000 });
+                var lookup = {};
+
+                for (var i = 0; i < results.length; i++) {
+                    var cmId = results[i].getValue('custrecord_linked_transaction');
+                    if (cmId) {
+                        lookup[cmId] = true;
+                    }
+                }
+
+                log.debug('AI Analysis Lookup', 'Found ' + Object.keys(lookup).length + ' CMs with AI analysis out of ' + cmIds.length + ' total CMs');
+                return lookup;
+
+            } catch (e) {
+                log.error('Error getting AI analysis lookup', { error: e.message, stack: e.stack });
+                return {};
             }
         }
 
