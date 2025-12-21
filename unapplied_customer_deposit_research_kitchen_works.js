@@ -84,6 +84,18 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                     return;
                 }
                 
+                // Handle Cross-SO Deposit Analysis requests
+                if (body.action === 'crossSOAnalysis') {
+                    var creditMemoId = body.creditMemoId;
+                    log.debug('Cross-SO Analysis Request', 'CM ID: ' + creditMemoId);
+                    
+                    var result = analyzeCrossSODeposits(creditMemoId);
+                    
+                    response.setHeader({ name: 'Content-Type', value: 'application/json' });
+                    response.write(JSON.stringify({ success: true, data: result }));
+                    return;
+                }
+                
                 // Handle deposit update requests
                 var depositId = body.depositId;
                 var nextStep = body.nextStep;
@@ -309,6 +321,20 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
             html += '</div>';
             html += '</div>';
             html += '<div id="comparisonModalOverlay" class="comparison-modal-overlay" onclick="hideComparisonModal()"></div>';
+
+            // Cross-SO Deposit Analysis Modal
+            html += '<div id="crossSOModal" class="comparison-modal">';
+            html += '<div class="comparison-modal-content">';
+            html += '<div class="comparison-modal-header cross-so-header">';
+            html += '<span class="comparison-modal-title">CD→INV Cross-SO Deposit Analysis</span>';
+            html += '<span class="comparison-modal-close" onclick="hideCrossSOModal()">&times;</span>';
+            html += '</div>';
+            html += '<div id="crossSOModalBody" class="comparison-modal-body">';
+            html += '<div class="comparison-loading">Loading cross-SO analysis...</div>';
+            html += '</div>';
+            html += '</div>';
+            html += '</div>';
+            html += '<div id="crossSOModalOverlay" class="comparison-modal-overlay" onclick="hideCrossSOModal()"></div>';
 
             // Balance As Of Date Control
             html += '<div class="balance-as-of-section">';
@@ -655,6 +681,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 var hasAI = aiAnalysisLookup && aiAnalysisLookup[cm.cmId];
                 html += '<td class="action-btn-cell">';
                 html += '<button type="button" class="so-inv-compare-btn" onclick="showSOInvoiceComparison(' + cm.cmId + ')" title="Compare SO vs Invoice Line Items">SO↔INV</button>';
+                html += '<br><button type="button" class="cross-so-btn" onclick="showCrossSOAnalysis(' + cm.cmId + ')" title="Analyze Cross-SO Deposit Applications">CD Cross-SO</button>';
                 if (hasAI) {
                     html += '<br><span class="ai-badge" title="AI analysis available">AI</span>';
                 }
@@ -1288,6 +1315,11 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 /* SO to Invoice Comparison Button */
                 '.so-inv-compare-btn { padding: 4px 8px; font-size: 11px; font-weight: 600; color: #fff; background: linear-gradient(135deg, #1976d2, #1565c0); border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; transition: all 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.2); display: block; margin: 0 auto; }' +
                 '.so-inv-compare-btn:hover { background: linear-gradient(135deg, #1565c0, #0d47a1); transform: translateY(-1px); box-shadow: 0 2px 5px rgba(0,0,0,0.25); }' +
+                
+                /* Cross-SO Analysis Button */
+                '.cross-so-btn { padding: 4px 8px; font-size: 11px; font-weight: 600; color: #fff; background: linear-gradient(135deg, #e91e63, #c2185b); border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; transition: all 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.2); display: block; margin: 6px auto 0; }' +
+                '.cross-so-btn:hover { background: linear-gradient(135deg, #c2185b, #ad1457); transform: translateY(-1px); box-shadow: 0 2px 5px rgba(0,0,0,0.25); }' +
+                
                 '.action-btn-cell { text-align: center !important; padding: 4px !important; }' +
                 '.ai-badge { display: block; margin: 6px auto 0; padding: 4px 8px; font-size: 11px; font-weight: 600; color: #fff; background: linear-gradient(135deg, #7c4dff, #651fff); border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px; box-shadow: 0 1px 3px rgba(124,77,255,0.3); cursor: help; transition: all 0.2s; }' +
                 '.ai-badge:hover { background: linear-gradient(135deg, #651fff, #6200ea); box-shadow: 0 2px 4px rgba(124,77,255,0.4); transform: translateY(-1px); }' +
@@ -1299,6 +1331,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '.comparison-modal.visible { display: block; }' +
                 '.comparison-modal-content { display: flex; flex-direction: column; height: 100%; max-height: 90vh; }' +
                 '.comparison-modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; background: linear-gradient(135deg, #1976d2, #1565c0); color: white; border-radius: 10px 10px 0 0; }' +
+                '.cross-so-header { background: linear-gradient(135deg, #e91e63, #c2185b); }' +
                 '.comparison-modal-title { font-size: 18px; font-weight: 700; }' +
                 '.comparison-modal-close { cursor: pointer; font-size: 28px; line-height: 1; opacity: 0.8; padding: 0 8px; }' +
                 '.comparison-modal-close:hover { opacity: 1; }' +
@@ -1345,6 +1378,15 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '.comparison-table .discount { color: #9c27b0; font-weight: 600; }' +
                 '.comparison-table .variance-positive { color: #4caf50; }' +
                 '.comparison-table .variance-negative { color: #d32f2f; }' +
+                '.match-row { background: #f1f8f4; }' +
+                '.mismatch-row { background: #fef5f5; }' +
+                '.no-invoice-row { background: #fff8e1; }' +
+                '.overpayment-row { background: #fff3cd; border: 2px solid #ffc107 !important; }' +
+                '.status-badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }' +
+                '.status-success { background: #4caf50; color: white; }' +
+                '.status-error { background: #dc3545; color: white; }' +
+                '.status-warning { background: #ff9800; color: white; }' +
+                '.status-overpayment { background: #ffc107; color: #000; }' +
 
                 /* Conclusion Box */
                 '.comparison-conclusion { margin-top: 25px; padding: 15px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; }' +
@@ -1910,6 +1952,139 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 'function hideComparisonModal() {' +
                 '    document.getElementById("soInvComparisonModal").classList.remove("visible");' +
                 '    document.getElementById("comparisonModalOverlay").classList.remove("visible");' +
+                '}' +
+                '' +
+                '/* =========================================== */' +
+                '/* CROSS-SO DEPOSIT ANALYSIS FUNCTIONS        */' +
+                '/* =========================================== */' +
+                '' +
+                '/* Show Cross-SO Deposit Analysis Modal */' +
+                'function showCrossSOAnalysis(creditMemoId) {' +
+                '    var modal = document.getElementById("crossSOModal");' +
+                '    var overlay = document.getElementById("crossSOModalOverlay");' +
+                '    var body = document.getElementById("crossSOModalBody");' +
+                '    ' +
+                '    body.innerHTML = "<div class=\\"comparison-loading\\">Loading cross-SO analysis...</div>";' +
+                '    modal.classList.add("visible");' +
+                '    overlay.classList.add("visible");' +
+                '    ' +
+                '    fetch("' + scriptUrl + '", {' +
+                '        method: "POST",' +
+                '        headers: { "Content-Type": "application/json" },' +
+                '        body: JSON.stringify({ action: "crossSOAnalysis", creditMemoId: creditMemoId })' +
+                '    })' +
+                '    .then(function(response) { return response.json(); })' +
+                '    .then(function(result) {' +
+                '        if (result.success && result.data) {' +
+                '            renderCrossSOResult(result.data);' +
+                '        } else {' +
+                '            body.innerHTML = "<div class=\\"error-msg\\">Error: " + (result.data && result.data.error ? result.data.error : "Unknown error") + "</div>";' +
+                '        }' +
+                '    })' +
+                '    .catch(function(err) {' +
+                '        body.innerHTML = "<div class=\\"error-msg\\">Error loading analysis: " + err.message + "</div>";' +
+                '    });' +
+                '}' +
+                '' +
+                '/* Hide Cross-SO Modal */' +
+                'function hideCrossSOModal() {' +
+                '    document.getElementById("crossSOModal").classList.remove("visible");' +
+                '    document.getElementById("crossSOModalOverlay").classList.remove("visible");' +
+                '}' +
+                '' +
+                '/* Render Cross-SO Analysis Result */' +
+                'function renderCrossSOResult(data) {' +
+                '    var body = document.getElementById("crossSOModalBody");' +
+                '    ' +
+                '    if (data.error) {' +
+                '        body.innerHTML = "<div class=\\"error-msg\\"><strong>Error:</strong> " + data.error + "</div>";' +
+                '        return;' +
+                '    }' +
+                '    ' +
+                '    var html = "";' +
+                '    ' +
+                '    /* Summary Cards */' +
+                '    html += "<div class=\\"comparison-summary\\">";' +
+                '    html += "<div class=\\"comparison-card\\">";' +
+                '    html += "<div class=\\"comparison-card-label\\">Total Applications</div>";' +
+                '    html += "<div class=\\"comparison-card-value\\">" + data.totalApplications + "</div>";' +
+                '    html += "</div>";' +
+                '    html += "<div class=\\"comparison-card\\">";' +
+                '    html += "<div class=\\"comparison-card-label\\">Same-SO Matches</div>";' +
+                '    html += "<div class=\\"comparison-card-value\\" style=\\"color:#28a745;\\">" + data.matches + "</div>";' +
+                '    html += "</div>";' +
+                '    html += "<div class=\\"comparison-card\\">";' +
+                '    html += "<div class=\\"comparison-card-label\\">Cross-SO Mismatches</div>";' +
+                '    html += "<div class=\\"comparison-card-value\\" style=\\"color:#dc3545;\\">" + data.mismatches + "</div>";' +
+                '    html += "</div>";' +
+                '    html += "<div class=\\"comparison-card\\">";' +
+                '    html += "<div class=\\"comparison-card-label\\">Non-Invoice Apps</div>";' +
+                '    html += "<div class=\\"comparison-card-value\\" style=\\"color:#ff9800;\\">" + data.noInvoice + "</div>";' +
+                '    html += "</div>";' +
+                '    html += "</div>";' +
+                '    ' +
+                '    /* Overpayment Source Info */' +
+                '    if (data.overpaymentCDTranId) {' +
+                '        html += "<div style=\\"margin:15px 0;padding:10px;background:#fff3cd;border:1px solid #ffc107;border-radius:4px;\\"><strong>🎯 Overpayment Source CD:</strong> " + data.overpaymentCDTranId + " (overpayment invoice highlighted below)</div>";' +
+                '    }' +
+                '    ' +
+                '    /* Applications Table */' +
+                '    if (data.applications && data.applications.length > 0) {' +
+                '        html += "<h3 style=\\"margin:20px 0 10px;\\">Deposit Applications</h3>";' +
+                '        html += "<table class=\\"comparison-table\\">";' +
+                '        html += "<thead><tr>";' +
+                '        html += "<th>Status</th>";' +
+                '        html += "<th>Customer Deposit</th>";' +
+                '        html += "<th>CD Source SO</th>";' +
+                '        html += "<th>Invoice</th>";' +
+                '        html += "<th>INV Source SO</th>";' +
+                '        html += "<th>Amount Applied</th>";' +
+                '        html += "</tr></thead><tbody>";' +
+                '        ' +
+                '        for (var i = 0; i < data.applications.length; i++) {' +
+                '            var app = data.applications[i];' +
+                '            ' +
+                '            /* Determine row class */' +
+                '            var rowClass = "";' +
+                '            if (app.isOverpaymentInv) {' +
+                '                rowClass = "overpayment-row";' +
+                '            } else if (app.status === "cross-so") {' +
+                '                rowClass = "mismatch-row";' +
+                '            } else if (app.status === "no-invoice") {' +
+                '                rowClass = "no-invoice-row";' +
+                '            } else {' +
+                '                rowClass = "match-row";' +
+                '            }' +
+                '            ' +
+                '            /* Determine status badge */' +
+                '            var statusBadge = "";' +
+                '            if (app.status === "cross-so") {' +
+                '                statusBadge = "<span class=\\"status-badge status-error\\">CROSS-SO</span>";' +
+                '            } else if (app.status === "no-invoice") {' +
+                '                statusBadge = "<span class=\\"status-badge status-warning\\">NO INVOICE</span>";' +
+                '            } else {' +
+                '                statusBadge = "<span class=\\"status-badge status-success\\">MATCH</span>";' +
+                '            }' +
+                '            ' +
+                '            /* Add overpayment indicator ONLY for overpayment invoice */' +
+                '            if (app.isOverpaymentInv) {' +
+                '                statusBadge += " <span class=\\"status-badge status-overpayment\\">🎯 OVERPAYMENT</span>";' +
+                '            }' +
+                '            ' +
+                '            html += "<tr class=\\"" + rowClass + "\\">";' +
+                '            html += "<td>" + statusBadge + "</td>";' +
+                '            html += "<td><a href=\\"/app/accounting/transactions/custdep.nl?id=" + app.cdId + "\\" target=\\"_blank\\">" + app.cdTranId + "</a></td>";' +
+                '            html += "<td>" + (app.cdSourceSO || "N/A") + "</td>";' +
+                '            html += "<td>" + (app.invTranId ? "<a href=\\"/app/accounting/transactions/custinvc.nl?id=" + app.invId + "\\" target=\\"_blank\\">" + app.invTranId + "</a>" : "<em style=\\"color:#999;\\">N/A</em>") + "</td>";' +
+                '            html += "<td>" + (app.invSourceSO || "N/A") + "</td>";' +
+                '            html += "<td>" + formatCompCurrency(app.amount) + "</td>";' +
+                '            html += "</tr>";' +
+                '        }' +
+                '        ' +
+                '        html += "</tbody></table>";' +
+                '    }' +
+                '    ' +
+                '    body.innerHTML = html;' +
                 '}' +
                 '' +
                 '/* Render Comparison Result */' +
@@ -3136,6 +3311,209 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
 
             } catch (e) {
                 log.error('Error in analyzeCreditMemoOverpayment', {
+                    error: e.message,
+                    stack: e.stack,
+                    creditMemoId: creditMemoId
+                });
+                return { error: e.message, creditMemoId: creditMemoId };
+            }
+        }
+
+        // ============================================================================
+        // CROSS-SO DEPOSIT ANALYSIS FUNCTIONS
+        // ============================================================================
+
+        /**
+         * Analyzes Customer Deposit applications for cross-SO mismatches
+         * @param {number} creditMemoId - Internal ID of the Credit Memo
+         * @returns {Object} Analysis result with matches and mismatches
+         */
+        function analyzeCrossSODeposits(creditMemoId) {
+            try {
+                log.debug('Cross-SO Analysis', 'Starting for CM ID: ' + creditMemoId);
+
+                // Step 1: Get customer from Credit Memo
+                var cmRecord = record.load({
+                    type: record.Type.CREDIT_MEMO,
+                    id: creditMemoId
+                });
+                var customerId = cmRecord.getValue({ fieldId: 'entity' });
+                var customerName = cmRecord.getText({ fieldId: 'entity' });
+                
+                log.debug('Customer Found', 'ID: ' + customerId + ', Name: ' + customerName);
+
+                // Step 2: Query all deposit applications for this customer
+                // Uses previousTransactionLineLink table to find relationships:
+                //   - linktype='DepAppl': CD (previousdoc) -> DEPA (nextdoc)
+                //   - linktype='Payment': INV (previousdoc) -> DEPA (nextdoc)
+                var sql = `
+                    SELECT 
+                        depa.id as depaId,
+                        depa.tranid as depaTranId,
+                        cd.id as cdId,
+                        cd.tranid as cdTranId,
+                        cd_tl.createdfrom as cdSourceSOId,
+                        cd_so.tranid as cdSourceSO,
+                        inv.id as invId,
+                        inv.tranid as invTranId,
+                        inv_tl.createdfrom as invSourceSOId,
+                        inv_so.tranid as invSourceSO,
+                        inv.custbody_overpayment_tran as invOverpaymentCD,
+                        depa_tl.netamount as amount
+                    FROM 
+                        transaction depa
+                        -- Link DEPA to CD via DepAppl linktype
+                        INNER JOIN previousTransactionLineLink ptll_cd 
+                            ON depa.id = ptll_cd.nextdoc 
+                            AND ptll_cd.linktype = 'DepAppl'
+                        INNER JOIN transaction cd 
+                            ON ptll_cd.previousdoc = cd.id
+                        -- Get CD's source SO from transactionLine.createdfrom
+                        INNER JOIN transactionLine cd_tl 
+                            ON cd.id = cd_tl.transaction 
+                            AND cd_tl.mainline = 'T'
+                        LEFT JOIN transaction cd_so 
+                            ON cd_tl.createdfrom = cd_so.id
+                        -- Link DEPA to INV via Payment linktype (LEFT JOIN to include non-invoice applications)
+                        LEFT JOIN previousTransactionLineLink ptll_inv 
+                            ON depa.id = ptll_inv.nextdoc 
+                            AND ptll_inv.linktype = 'Payment'
+                        LEFT JOIN transaction inv 
+                            ON ptll_inv.previousdoc = inv.id
+                            AND inv.type = 'CustInvc'
+                        -- Get INV's source SO from transactionLine.createdfrom
+                        LEFT JOIN transactionLine inv_tl 
+                            ON inv.id = inv_tl.transaction 
+                            AND inv_tl.mainline = 'T'
+                        LEFT JOIN transaction inv_so 
+                            ON inv_tl.createdfrom = inv_so.id
+                        -- Get DEPA amount from mainline
+                        INNER JOIN transactionLine depa_tl 
+                            ON depa.id = depa_tl.transaction 
+                            AND depa_tl.mainline = 'T'
+                    WHERE 
+                        depa.entity = ${customerId}
+                        AND depa.type = 'DepAppl'
+                        AND cd.type = 'CustDep'
+                    ORDER BY 
+                        cd.tranid ASC, depa.id ASC
+                `;
+
+                log.debug('SQL Query', sql);
+
+                var resultSet = query.runSuiteQL({ query: sql });
+                var results = resultSet.asMappedResults();
+
+                log.debug('Query Results Count', results.length);
+
+                // Step 3: Get the Credit Memo memo field to find the overpayment CD
+                var cmMemo = cmRecord.getValue({ fieldId: 'memo' }) || '';
+                var overpaymentCDMatch = cmMemo.match(/CD\d+/);
+                var overpaymentCDTranId = overpaymentCDMatch ? overpaymentCDMatch[0] : null;
+                
+                log.debug('Overpayment CD from memo', overpaymentCDTranId);
+
+                // Step 4: Process results
+                var applications = [];
+                var matches = 0;
+                var mismatches = 0;
+                var noInvoice = 0;
+                var crossSOAmount = 0;
+
+                for (var i = 0; i < results.length; i++) {
+                    var row = results[i];
+                    
+                    var cdSourceSO = row.cdsourceso || 'N/A';
+                    var invSourceSO = row.invsourceso || null;
+                    var invOverpaymentCD = row.invoverpaymentcd ? String(row.invoverpaymentcd) : null;
+                    var cdId = String(row.cdid);
+                    var isOverpaymentCDTranId = (row.cdtranid === overpaymentCDTranId);
+                    
+                    // Determine status
+                    var status = 'match';
+                    var isMismatch = false;
+                    var isNoInvoice = false;
+                    // ONLY highlight if this invoice's custbody_overpayment_tran points to this CD AND it's the overpayment CD
+                    var isOverpaymentInv = (invOverpaymentCD === cdId && isOverpaymentCDTranId);
+                    
+                    if (!invSourceSO) {
+                        // No invoice (applied to refund or other non-invoice transaction)
+                        status = 'no-invoice';
+                        isNoInvoice = true;
+                        noInvoice++;
+                    } else if (cdSourceSO !== 'N/A' && invSourceSO !== 'N/A' && cdSourceSO !== invSourceSO) {
+                        // True cross-SO mismatch
+                        status = 'cross-so';
+                        isMismatch = true;
+                        mismatches++;
+                        crossSOAmount += parseFloat(row.amount || 0);
+                    } else {
+                        // Match
+                        matches++;
+                    }
+
+                    applications.push({
+                        depaId: row.depaid,
+                        depaTranId: row.depatranid,
+                        cdId: cdId,
+                        cdTranId: row.cdtranid,
+                        cdSourceSO: cdSourceSO,
+                        invId: row.invid,
+                        invTranId: row.invtranid,
+                        invSourceSO: invSourceSO || 'N/A',
+                        amount: parseFloat(row.amount || 0),
+                        status: status,
+                        isMismatch: isMismatch,
+                        isNoInvoice: isNoInvoice,
+                        isOverpaymentInv: isOverpaymentInv
+                    });
+                }
+
+                // Step 5: Sort applications - Cross-SO CDs first, then by CD tranid
+                applications.sort(function(a, b) {
+                    // First, check if either CD has a cross-SO mismatch
+                    var aCDHasMismatch = false;
+                    var bCDHasMismatch = false;
+                    
+                    // Check if this CD has ANY cross-SO mismatches
+                    for (var j = 0; j < applications.length; j++) {
+                        if (applications[j].cdTranId === a.cdTranId && applications[j].isMismatch) {
+                            aCDHasMismatch = true;
+                        }
+                        if (applications[j].cdTranId === b.cdTranId && applications[j].isMismatch) {
+                            bCDHasMismatch = true;
+                        }
+                    }
+                    
+                    // CDs with cross-SO mismatches come first
+                    if (aCDHasMismatch && !bCDHasMismatch) return -1;
+                    if (!aCDHasMismatch && bCDHasMismatch) return 1;
+                    
+                    // Then sort by CD tranid
+                    if (a.cdTranId < b.cdTranId) return -1;
+                    if (a.cdTranId > b.cdTranId) return 1;
+                    
+                    // Within same CD, put mismatches first, then matches, then no-invoice
+                    var statusOrder = { 'cross-so': 1, 'match': 2, 'no-invoice': 3 };
+                    return (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99);
+                });
+
+                log.debug('Analysis Complete', 'Total: ' + applications.length + ', Matches: ' + matches + ', Mismatches: ' + mismatches + ', No Invoice: ' + noInvoice);
+
+                return {
+                    customerId: customerId,
+                    customerName: customerName,
+                    totalApplications: applications.length,
+                    matches: matches,
+                    mismatches: mismatches,
+                    noInvoice: noInvoice,
+                    crossSOAmount: crossSOAmount,
+                    applications: applications,
+                    overpaymentCDTranId: overpaymentCDTranId
+                };
+
+            } catch (e) {
+                log.error('Cross-SO Analysis Error', {
                     error: e.message,
                     stack: e.stack,
                     creditMemoId: creditMemoId
