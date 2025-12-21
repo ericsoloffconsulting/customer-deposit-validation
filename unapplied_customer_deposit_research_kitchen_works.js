@@ -12,7 +12,7 @@
  * This report helps identify outstanding deposits that may need to be applied,
  * refunded, or researched for the Kitchen Works department.
  */
-define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record'],
+define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record', 'N/search', '../ericsoloffconsulting/lib/claude_api_library'],
     /**
      * @param {serverWidget} serverWidget
      * @param {query} query
@@ -20,8 +20,10 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
      * @param {runtime} runtime
      * @param {url} url
      * @param {record} record
+     * @param {search} search
+     * @param {claudeAPI} claudeAPI
      */
-    function (serverWidget, query, log, runtime, url, record) {
+    function (serverWidget, query, log, runtime, url, record, search, claudeAPI) {
 
         /**
          * Handles GET and POST requests to the Suitelet
@@ -44,6 +46,31 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
             var response = context.response;
             try {
                 var body = JSON.parse(context.request.body);
+                
+                // Check if this is an AI Analysis request
+                if (body.action === 'aiAnalysis') {
+                    var creditMemoId = body.creditMemoId;
+                    var comparisonData = body.comparisonData; // Include SO/INV comparison findings
+                    log.debug('AI Analysis Request', 'CM ID: ' + creditMemoId);
+                    
+                    var aiResult = analyzeTransactionLifecycleWithAI(creditMemoId, comparisonData);
+                    
+                    response.setHeader({ name: 'Content-Type', value: 'application/json' });
+                    response.write(JSON.stringify({ success: true, data: aiResult }));
+                    return;
+                }
+                
+                // Check if this is a Load AI Analysis request
+                if (body.action === 'loadAIAnalysis') {
+                    var creditMemoId = body.creditMemoId;
+                    log.debug('Load AI Analysis Request', 'CM ID: ' + creditMemoId);
+                    
+                    var aiResult = loadSavedAIAnalysis(creditMemoId);
+                    
+                    response.setHeader({ name: 'Content-Type', value: 'application/json' });
+                    response.write(JSON.stringify({ success: true, aiAnalysis: aiResult }));
+                    return;
+                }
                 
                 // Check if this is an SO-Invoice comparison request
                 if (body.action === 'soInvoiceComparison') {
@@ -1408,11 +1435,12 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '  tooltipContent.innerHTML = html;' +
                 '  tooltip.className = "customer-balance-tooltip visible";' +
                 '}' +
+                '' +
                 'function hideCustomerBalanceTooltip() {' +
                 '  var tooltip = document.getElementById("customerBalanceTooltip");' +
                 '  if (tooltip) tooltip.className = "customer-balance-tooltip";' +
                 '}' +
-
+                '' +
                 /* Restore expanded state from localStorage */
                 'function restoreExpandedState() {' +
                 '    try {' +
@@ -1879,6 +1907,13 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '        return;' +
                 '    }' +
                 '    ' +
+                '    /* Store comparison data globally for AI analysis */' +
+                '    window.currentComparisonData = {' +
+                '        mismatchVariance: data.totals ? data.totals.mismatchVariance : 0,' +
+                '        unbilledVariance: data.totals ? data.totals.unbilledVariance : 0,' +
+                '        totalVariance: data.totals ? data.totals.totalVariance : 0' +
+                '    };' +
+                '    ' +
                 '    var html = "";' +
                 '    ' +
                 '    /* Transaction Links with Amounts */' +
@@ -1979,6 +2014,23 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    var conclusionClass = Math.abs(mismatchVar) < 0.01 ? "match" : "mismatch";' +
                 '    html += "<div class=\\"comparison-conclusion " + conclusionClass + "\\">" + (data.conclusion || "Analysis complete") + "</div>";' +
                 '    ' +
+                '    /* AI Analysis Button - Only show if mismatch does NOT fully explain CM */' +
+                '    var showAIButton = !shouldHideAIButton(mismatchVar, cmTotalAmt);' +
+                '    if (showAIButton) {' +
+                '        html += "<div style=\\"margin-top:20px;padding:15px;background:#e3f2fd;border:1px solid #1976d2;border-radius:6px;\\">";' +
+                '        html += "<button type=\\"button\\" id=\\"aiAnalysisBtn\\" class=\\"ai-analysis-btn\\" onclick=\\"runAIAnalysis(" + data.creditMemo.id + ")\\" style=\\"padding:10px 20px;background:#1976d2;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px;font-weight:600;\\">🤖 Analyze Transaction Lifecycle with AI</button>";' +
+                '        html += "<div style=\\"margin-top:8px;font-size:12px;color:#555;\\">";' +
+                '        html += "The AI will analyze the sales order&#39;s transaction lifecycle to determine if changes to the order explain this overpayment credit memo.";' +
+                '        html += "</div>";' +
+                '        html += "</div>";' +
+                '        ' +
+                '        /* AI Results Container */' +
+                '        html += "<div id=\\"aiResultsContainer\\" style=\\"margin-top:20px;\\">";' +
+                '        html += "<div id=\\"aiResultsContent\\" style=\\"padding:20px;background:#f5f5f5;border:1px solid #ccc;border-radius:6px;\\">";' +
+                '        html += "</div>";' +
+                '        html += "</div>";' +
+                '    }' +
+                '    ' +
                 '    /* Problem Items Summary - moved above table */' +
                 '    if (data.problemItems && data.problemItems.length > 0) {' +
                 '        html += "<div style=\\"margin-top:20px;padding:15px;background:#fff3e0;border:1px solid #f57c00;border-radius:6px;\\">" ;' +
@@ -2070,6 +2122,12 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    html += "</tbody></table></div>";' +
                 '    ' +
                 '    body.innerHTML = html;' +
+                '    ' +
+                '    if (showAIButton && data.creditMemo && data.creditMemo.id) {' +
+                '        setTimeout(function() {' +
+                '            loadExistingAIAnalysis(data.creditMemo.id);' +
+                '        }, 100);' +
+                '    }' +
                 '}' +
                 '' +
                 '/* Format currency for comparison modal - always positive with $ */' +
@@ -2095,7 +2153,807 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    if (Math.abs(num) < 0.01) return "$0.00";' +
                 '    var prefix = num < 0 ? "-$" : "+$";' +
                 '    return prefix + Math.abs(num).toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ",");' +
+                '}' +
+                '' +
+                '/* =========================================== */' +
+                '/* AI TRANSACTION LIFECYCLE ANALYSIS          */' +
+                '/* =========================================== */' +
+                '' +
+                '/* Client-side cache for AI analysis results */' +
+                'var aiAnalysisCache = {};' +
+                '' +
+                '/* Determine if AI button should be hidden (mismatch fully explains CM) */' +
+                'function shouldHideAIButton(mismatchVariance, cmTotal) {' +
+                '    var mismatchAbs = Math.abs(mismatchVariance || 0);' +
+                '    var cmAbs = Math.abs(cmTotal || 0);' +
+                '    var difference = Math.abs(mismatchAbs - cmAbs);' +
+                '    return difference < 0.10;' +
+                '}' +
+                '' +
+                '/* Load existing AI analysis for a CM */' +
+                'function loadExistingAIAnalysis(creditMemoId) {' +
+                '    if (aiAnalysisCache[creditMemoId]) {' +
+                '        renderAIAnalysisResult(aiAnalysisCache[creditMemoId]);' +
+                '        updateAIButtonForExistingAnalysis();' +
+                '        return;' +
+                '    }' +
+                '    ' +
+                '    var resultsContent = document.getElementById(\"aiResultsContent\");' +
+                '    if (resultsContent) {' +
+                '        resultsContent.innerHTML = \"<div style=\\\"padding:15px;color:#777;font-style:italic;\\\"><em>Loading previous AI analysis...</em></div>\";' +
+                '    }' +
+                '    ' +
+                '    var xhr = new XMLHttpRequest();' +
+                '    xhr.open(\"POST\", window.location.href, true);' +
+                '    xhr.setRequestHeader(\"Content-Type\", \"application/json\");' +
+                '    xhr.onload = function() {' +
+                '        if (xhr.status === 200) {' +
+                '            var response = JSON.parse(xhr.responseText);' +
+                '            if (response.success && response.aiAnalysis && response.aiAnalysis.found) {' +
+                '                var data = response.aiAnalysis;' +
+                '                var displayData = {' +
+                '                    aiDecision: data.aiDecision,' +
+                '                    haikuResponse: data.haikuResponse,' +
+                '                    savedRecordId: data.recordId,' +
+                '                    createdDate: data.createdDate' +
+                '                };' +
+                '                aiAnalysisCache[creditMemoId] = displayData;' +
+                '                renderAIAnalysisResult(displayData);' +
+                '                updateAIButtonForExistingAnalysis();' +
+                '            } else if (resultsContent) {' +
+                '                resultsContent.innerHTML = \"\";' +
+                '            }' +
+                '        }' +
+                '    };' +
+                '    xhr.send(JSON.stringify({ action: \"loadAIAnalysis\", creditMemoId: creditMemoId }));' +
+                '}' +
+                '' +
+                '/* Update AI button text to show Re-run when analysis exists */' +
+                'function updateAIButtonForExistingAnalysis() {' +
+                '    var btn = document.getElementById(\"aiAnalysisBtn\");' +
+                '    if (btn) {' +
+                '        btn.textContent = \"🤖 Re-run AI Analysis\";' +
+                '    }' +
+                '}' +
+                '' +
+                '/* Run AI Analysis on Transaction Lifecycle */' +
+                'function runAIAnalysis(creditMemoId) {' +
+                '    var btn = document.getElementById("aiAnalysisBtn");' +
+                '    var resultsContainer = document.getElementById("aiResultsContainer");' +
+                '    var resultsContent = document.getElementById("aiResultsContent");' +
+                '    ' +
+                '    if (!btn || !resultsContainer || !resultsContent) return;' +
+                '    ' +
+                '    btn.disabled = true;' +
+                '    btn.textContent = "⏳ Analyzing Transaction Lifecycle...";' +
+                '    btn.style.background = "#999";' +
+                '    ' +
+                '    resultsContainer.style.display = "block";' +
+                '    resultsContent.innerHTML = "<div style=\\"text-align:center;padding:20px;\\"><div style=\\"font-size:18px;\\">⏳</div><div style=\\"margin-top:10px;\\">Analyzing sales order transaction history...</div></div>";' +
+                '    ' +
+                '    var comparisonData = window.currentComparisonData || {};' +
+                '    ' +
+                '    fetch("' + scriptUrl + '", {' +
+                '        method: "POST",' +
+                '        headers: { "Content-Type": "application/json" },' +
+                '        body: JSON.stringify({ ' +
+                '            action: "aiAnalysis", ' +
+                '            creditMemoId: creditMemoId, ' +
+                '            comparisonData: comparisonData ' +
+                '        })' +
+                '    })' +
+                '    .then(function(response) { return response.json(); })' +
+                '    .then(function(result) {' +
+                '        if (result.success && result.data) {' +
+                '            renderAIAnalysisResult(result.data);' +
+                '        } else {' +
+                '            resultsContent.innerHTML = "<div style=\\"color:#d32f2f;padding:15px;\\">Error: " + (result.data && result.data.error ? result.data.error : "Unknown error") + "</div>";' +
+                '        }' +
+                '        btn.disabled = false;' +
+                '        btn.textContent = "🤖 Re-run AI Analysis";' +
+                '        btn.style.background = "#1976d2";' +
+                '    })' +
+                '    .catch(function(err) {' +
+                '        resultsContent.innerHTML = "<div style=\\"color:#d32f2f;padding:15px;\\">Error: " + err.message + "</div>";' +
+                '        btn.disabled = false;' +
+                '        btn.textContent = "🤖 Retry AI Analysis";' +
+                '        btn.style.background = "#1976d2";' +
+                '    });' +
+                '}' +
+                '' +
+                '/* Render AI Analysis Result */' +
+                'function renderAIAnalysisResult(data) {' +
+                '    var resultsContent = document.getElementById("aiResultsContent");' +
+                '    if (!resultsContent) return;' +
+                '    ' +
+                '    if (data.error) {' +
+                '        resultsContent.innerHTML = "<div style=\\"color:#d32f2f;padding:15px;\\">" + data.error + "</div>";' +
+                '        return;' +
+                '    }' +
+                '    ' +
+                '    var html = "";' +
+                '    var decision = data.aiDecision || "UNKNOWN";' +
+                '    var decisionClass = decision === "CONFIRMED" ? "success" : (decision === "NOT CONFIRMED" ? "error" : "warning");' +
+                '    var decisionBg = decision === "CONFIRMED" ? "#e8f5e9" : (decision === "NOT CONFIRMED" ? "#ffebee" : "#fff3e0");' +
+                '    var decisionBorder = decision === "CONFIRMED" ? "#4caf50" : (decision === "NOT CONFIRMED" ? "#d32f2f" : "#f57c00");' +
+                '    var decisionIcon = decision === "CONFIRMED" ? "✓" : (decision === "NOT CONFIRMED" ? "✗" : "?");' +
+                '    ' +
+                '    html += "<div style=\\"padding:15px;background:" + decisionBg + ";border:2px solid " + decisionBorder + ";border-radius:6px;margin-bottom:15px;\\">" ;' +
+                '    html += "<div style=\\"font-size:16px;font-weight:700;color:#333;\\">" + decisionIcon + " AI DECISION: " + decision + "</div>";' +
+                '    if (decision === "CONFIRMED") {' +
+                '        html += "<div style=\\"margin-top:5px;font-size:13px;color:#555;\\">Sales Order changes explain the overpayment credit memo.</div>";' +
+                '    } else if (decision === "NOT CONFIRMED") {' +
+                '        html += "<div style=\\"margin-top:5px;font-size:13px;color:#555;\\">Sales Order changes do NOT explain the overpayment. Investigate other sources.</div>";' +
+                '    }' +
+                '    html += "</div>";' +
+                '    ' +
+                '    html += "<div style=\\"background:white;padding:20px;border:1px solid #ddd;border-radius:6px;\\">" ;' +
+                '    html += "<h3 style=\\"margin:0 0 15px 0;font-size:16px;color:#1976d2;\\">🤖 AI Forensic Analysis</h3>";' +
+                '    ' +
+                '    var responseText = data.haikuResponse || "No response received";' +
+                '    ' +
+                '    html += "<div style=\\"white-space:pre-wrap;font-family:Arial,sans-serif;font-size:13px;line-height:1.6;color:#333;\\">" + escapeHtmlClient(responseText) + "</div>";' +
+                '    ' +
+                '    html += "<div style=\\"margin-top:15px;padding-top:15px;border-top:1px solid #ddd;font-size:12px;color:#777;\\">" ;' +
+                '    if (data.systemNotesCount !== undefined) {' +
+                '        html += "System Notes Analyzed: " + data.systemNotesCount + " | ";' +
+                '        html += "Financial: " + (data.organizedNotes && data.organizedNotes.financial ? data.organizedNotes.financial.length : 0) + " | ";' +
+                '        html += "Lifecycle: " + (data.organizedNotes && data.organizedNotes.lifecycle ? data.organizedNotes.lifecycle.length : 0);' +
+                '    }' +
+                '    if (data.savedRecordId) {' +
+                '        html += (data.systemNotesCount !== undefined ? " | " : "") + "<span style=\\"color:#1976d2;\\">Record ID: " + data.savedRecordId + "</span>";' +
+                '    }' +
+                '    if (data.createdDate) {' +
+                '        html += " | <span style=\\"color:#777;\\">Created: " + data.createdDate + "</span>";' +
+                '    }' +
+                '    html += "</div>";' +
+                '    html += "</div>";' +
+                '    ' +
+                '    resultsContent.innerHTML = html;' +
+                '}' +
+                '' +
+                '/* Client-side HTML escape */' +
+                'function escapeHtmlClient(text) {' +
+                '    if (!text) return "";' +
+                '    return text' +
+                '        .replace(/&/g, "&amp;")' +
+                '        .replace(/</g, "&lt;")' +
+                '        .replace(/>/g, "&gt;")' +
+                '        .replace(/"/g, "&quot;")' +
+                '        .replace(/\'/g, "&#039;");' +
                 '}';
+        }
+
+        // ============================================================================
+        // AI TRANSACTION LIFECYCLE ANALYSIS FUNCTIONS
+        // ============================================================================
+
+        /**
+         * Query current line items on Sales Order for context
+         * @param {number} soInternalId - Sales Order internal ID
+         * @returns {Array} Current line items with item names and amounts
+         */
+        function querySalesOrderLineItems(soInternalId) {
+            try {
+                var sql = `
+                    SELECT 
+                        tl.id,
+                        tl.linesequencenumber,
+                        i.itemid,
+                        i.displayname,
+                        tl.quantity,
+                        tl.rate,
+                        tl.amount
+                    FROM transactionLine tl
+                    LEFT JOIN item i ON tl.item = i.id
+                    WHERE tl.transaction = ` + soInternalId + `
+                    AND tl.mainline = 'F'
+                    ORDER BY tl.linesequencenumber
+                `;
+
+                var results = query.runSuiteQL({ query: sql }).asMappedResults();
+                log.debug('SO Line Items Query', {
+                    soId: soInternalId,
+                    lineCount: results.length
+                });
+                return results;
+
+            } catch (e) {
+                log.error('Error querying SO line items', { error: e.message, soId: soInternalId });
+                return [];
+            }
+        }
+
+        /**
+         * Query System Notes for a Sales Order to track transaction changes
+         * @param {number} soInternalId - Sales Order internal ID
+         * @param {string} depositDate - Customer Deposit date (YYYY-MM-DD)
+         * @param {string} overpaymentDate - Overpayment recognition date (YYYY-MM-DD)
+         * @returns {Array} System Notes records
+         */
+        function querySystemNotesForSO(soInternalId, depositDate, overpaymentDate) {
+            try {
+                // Convert M/D/YYYY to Date object for comparison
+                function parseNetSuiteDate(dateStr) {
+                    if (!dateStr) return null;
+                    var parts = dateStr.split('/');
+                    if (parts.length === 3) {
+                        // parts[0] = month, parts[1] = day, parts[2] = year
+                        return new Date(parts[2], parts[0] - 1, parts[1]); // year, month (0-indexed), day
+                    }
+                    return null;
+                }
+
+                var depositDateObj = parseNetSuiteDate(depositDate);
+                var overpaymentDateObj = parseNetSuiteDate(overpaymentDate);
+
+                if (!depositDateObj || !overpaymentDateObj) {
+                    log.error('Invalid Dates', {
+                        depositDate: depositDate,
+                        overpaymentDate: overpaymentDate
+                    });
+                    return [];
+                }
+
+                log.debug('System Notes Query Params', {
+                    soInternalId: soInternalId,
+                    depositDate: depositDate,
+                    overpaymentDate: overpaymentDate,
+                    depositDateObj: depositDateObj.toISOString(),
+                    overpaymentDateObj: overpaymentDateObj.toISOString()
+                });
+
+                // Query ALL system notes for this SO (no date filter in SQL - we'll filter in JS)
+                var sql = `
+                    SELECT 
+                        sn.id,
+                        sn.date,
+                        sn.field,
+                        sn.oldvalue,
+                        sn.newvalue,
+                        sn.name,
+                        sn.lineid,
+                        sn.context,
+                        sn.recordtypeid,
+                        e.firstname || ' ' || e.lastname AS user_name
+                    FROM systemNote sn
+                    LEFT JOIN employee e ON sn.name = e.id
+                    WHERE sn.recordid = ` + soInternalId + `
+                    ORDER BY sn.date, sn.id
+                `;
+
+                var results = query.runSuiteQL({ query: sql }).asMappedResults();
+                
+                log.debug('System Notes Query - Total Found', {
+                    soId: soInternalId,
+                    totalFound: results.length
+                });
+
+                // Filter by date in JavaScript
+                var filteredResults = [];
+                for (var i = 0; i < results.length; i++) {
+                    var note = results[i];
+                    var noteDateObj = parseNetSuiteDate(note.date);
+                    
+                    if (noteDateObj && noteDateObj >= depositDateObj && noteDateObj <= overpaymentDateObj) {
+                        filteredResults.push(note);
+                    }
+                }
+                
+                log.debug('System Notes Query - Date Filtered', {
+                    beforeFilter: results.length,
+                    afterFilter: filteredResults.length,
+                    dateRange: depositDate + ' to ' + overpaymentDate,
+                    sampleFields: filteredResults.length > 0 ? filteredResults.slice(0, 10).map(function(r) { 
+                        return { date: r.date, field: r.field }; 
+                    }) : []
+                });
+                
+                return filteredResults;
+
+            } catch (e) {
+                log.error('Error querying system notes', { error: e.message, soId: soInternalId });
+                return [];
+            }
+        }
+
+        /**
+         * Organize and filter System Notes by tier (financial, lifecycle, scheduling, business, people)
+         * Excludes operational noise like fulfillment status, allocations, picks, packs
+         * @param {Array} rawSystemNotes - Raw system notes from query
+         * @returns {Object} Organized system notes by tier with meaningful changes only
+         */
+        function organizeSystemNotesByTier(rawSystemNotes) {
+            var organized = {
+                financial: [],
+                lifecycle: [],
+                scheduling: [],
+                business: [],
+                people: [],
+                excluded: []
+            };
+
+            // Define tier classifications
+            var tiers = {
+                financial: ['TRANLINE.MAMOUNT', 'TRANLINE.RUNITPRICE', 'TRANLINE.RQTY', 'TRANDOC.MAMOUNTMAIN', 'TRANLINE.FXAMOUNT'],
+                lifecycle: ['TRANDOC.KSTATUS', 'TRANDOC.KREVENUESTATUS'],
+                scheduling: ['TRANDOC.DSHIP', 'TRANLINE.DSHIP', 'TRANLINE.DREQUESTEDDATE', 'TRANDOC.DEXPECTEDSHIPDATE'],
+                business: ['TRANDOC.ENTITY', 'TRANDOC.KTERMS', 'TRANDOC.SADDR', 'TRANDOC.SSHIPADDR'],
+                // Exclude operational noise
+                exclude: ['TRANLINE.RQTYSHIPRECV', 'TRANLINE.RQTYPICKED', 'TRANLINE.RQTYPACKED', 'TRANLINE.RCOMMITTED', 
+                         'TRANLINE.RALLOCATED', 'TRANLINE.KLOCATION', 'TRANDOC.KSHIPPINGSTATUS', 'TRANDOC.KCLOSED',
+                         'TRANLINE.KCLOSED', 'TRANLINE.KCOMMITTINGSTATUS', 'TRANLINE.KFULFILLMENTSTATUS']
+            };
+
+            for (var i = 0; i < rawSystemNotes.length; i++) {
+                var note = rawSystemNotes[i];
+                var field = note.field;
+                var placed = false;
+
+                // Check if excluded
+                for (var e = 0; e < tiers.exclude.length; e++) {
+                    if (field === tiers.exclude[e]) {
+                        organized.excluded.push(note);
+                        placed = true;
+                        break;
+                    }
+                }
+                if (placed) continue;
+
+                // Check financial tier
+                for (var f = 0; f < tiers.financial.length; f++) {
+                    if (field === tiers.financial[f]) {
+                        organized.financial.push(note);
+                        placed = true;
+                        break;
+                    }
+                }
+                if (placed) continue;
+
+                // Check lifecycle tier
+                for (var l = 0; l < tiers.lifecycle.length; l++) {
+                    if (field === tiers.lifecycle[l]) {
+                        organized.lifecycle.push(note);
+                        placed = true;
+                        break;
+                    }
+                }
+                if (placed) continue;
+
+                // Check scheduling tier
+                for (var s = 0; s < tiers.scheduling.length; s++) {
+                    if (field === tiers.scheduling[s]) {
+                        organized.scheduling.push(note);
+                        placed = true;
+                        break;
+                    }
+                }
+                if (placed) continue;
+
+                // Check business tier
+                for (var b = 0; b < tiers.business.length; b++) {
+                    if (field === tiers.business[b]) {
+                        organized.business.push(note);
+                        placed = true;
+                        break;
+                    }
+                }
+                if (placed) continue;
+
+                // If not classified, include in people/other
+                organized.people.push(note);
+            }
+
+            log.debug('System Notes Organized', 'Financial: ' + organized.financial.length + ', Lifecycle: ' + 
+                organized.lifecycle.length + ', Scheduling: ' + organized.scheduling.length + ', Business: ' + 
+                organized.business.length + ', People: ' + organized.people.length + ', Excluded: ' + organized.excluded.length);
+
+            return organized;
+        }
+
+        /**
+         * Build system prompt for Claude AI forensic analyst
+         * @returns {string} System prompt
+         */
+        function buildTransactionLifecycleSystemPrompt() {
+            return 'You are a forensic accounting analyst examining a NetSuite sales order transaction lifecycle to determine if changes to the order explain an overpayment credit memo.\n\n' +
+                'BUSINESS CONTEXT:\n' +
+                '- Customer: Kitchen Works (custom kitchen cabinets, complex multi-SO projects)\n' +
+                '- Typical Issue: Customer deposits paid upfront, then Sales Order changes occur (price adjustments, quantity changes, cancellations)\n' +
+                '- When SO total decreases after deposit paid, system recognizes overpayment and creates Credit Memo\n' +
+                '- Migration Date: 4/30/2024 - Data before this date may contain migration artifacts and should be considered less reliable\n\n' +
+                'YOUR TASK:\n' +
+                'Analyze the provided Sales Order System Notes to determine if transaction changes explain the Credit Memo overpayment.\n\n' +
+                'ANALYSIS APPROACH:\n' +
+                '1. Focus on FINANCIAL changes: line amounts (TRANLINE.MAMOUNT), unit prices (TRANLINE.RUNITPRICE), quantities (TRANLINE.RQTY), header totals (TRANDOC.MAMOUNTMAIN)\n' +
+                '2. Consider LIFECYCLE changes: order status (TRANDOC.KSTATUS), revenue recognition status (TRANDOC.KREVENUESTATUS)\n' +
+                '3. Note SCHEDULING changes if relevant: ship dates (DSHIP), requested dates (DREQUESTEDDATE)\n' +
+                '4. Evaluate BUSINESS changes: customer (ENTITY), payment terms (KTERMS), shipping address (SADDR)\n' +
+                '5. Track WHO made changes and WHEN - cite specific employee names and dates\n' +
+                '6. Calculate net financial impact: Did SO total decrease by approximately the CM amount?\n\n' +
+                'CRITICAL REQUIREMENTS:\n' +
+                '- ALWAYS start with a narrative paragraph explaining your findings in plain English\n' +
+                '- For line-level changes (TRANLINE.MAMOUNT, TRANLINE.RUNITPRICE, TRANLINE.RQTY), describe WHAT changed even if item names are not available\n' +
+                '- Track EVERY financial change chronologically with: Date, Person, Field, Old Value → New Value, Net Impact\n' +
+                '- Calculate the EXACT net change from all TRANDOC.MAMOUNTMAIN entries\n' +
+                '- Compare net change to CM amount - if difference > $100, explain the discrepancy\n' +
+                '- Be FACTUAL and DETAILED - cite specific dollar amounts, dates, and names\n' +
+                '- Do NOT dismiss large discrepancies as "small" - quantify and explain\n\n' +
+                'OUTPUT FORMAT:\n' +
+                'Start with: EXECUTIVE SUMMARY - A 2-3 sentence narrative explaining what you found and whether SO changes explain the CM.\n\n' +
+                'Then provide these sections:\n' +
+                '1. DECISION: ---DECISION--- CONFIRMED ---END--- or ---DECISION--- NOT CONFIRMED ---END---\n' +
+                '   STRICT CRITERIA:\n' +
+                '   - CONFIRMED = Net SO decrease matches CM amount within $0.01 tolerance (rounding only)\n' +
+                '   - NOT CONFIRMED = Variance > $0.01, or no decrease found, or any unexplained discrepancy\n' +
+                '   - The SO changes must EXACTLY explain the CM amount - even $1+ variance means NOT CONFIRMED\n' +
+                '   - If variance exists, the data may still be helpful but the answer is NOT CONFIRMED\n\n' +
+                '2. FINANCIAL RECONCILIATION:\n' +
+                '   - Initial SO Total: $X (date, by whom)\n' +
+                '   - Final SO Total: $Y (date, by whom)\n' +
+                '   - Net Change: $(X-Y) [DECREASE] or $(Y-X) [INCREASE]\n' +
+                '   - Credit Memo Amount: $Z\n' +
+                '   - Variance: $(|Net Change - CM|)\n' +
+                '   - VARIANCE EXPLANATION: If variance > $0.01, explain the discrepancy. Provide theories: multiple invoices? partial billing? contract adjustments? other transactions?\n\n' +
+                '3. LINE-LEVEL CHANGES (if any TRANLINE changes):\n' +
+                '   IMPORTANT: Use the lineid field to identify which item changed. Match lineid to Line ID in current items list.\n' +
+                '   Format: Date, User, Line ID X (Item Name), Field, Old → New, Impact\n' +
+                '   Example: "7/12/2024: Michael Strange changed Line ID 3 (Installation Labor) price $295.00 → $395.80 (+$100.80)"\n' +
+                '   \n' +
+                '   CRITICAL PATTERN TO DETECT - LINE DELETIONS:\n' +
+                '   If TRANDOC.MAMOUNTMAIN decreased significantly but you see NO or MINIMAL TRANLINE changes:\n' +
+                '   - This indicates LINE ITEMS WERE DELETED from the Sales Order\n' +
+                '   - NetSuite does NOT record individual line deletions in system notes\n' +
+                '   - State: "LINE DELETION DETECTED: SO total decreased by $X but only $Y in line changes found. Missing $Z suggests items were removed."\n' +
+                '   - Mark this as a DATA QUALITY LIMITATION in your analysis\n\n' +
+                '4. CHRONOLOGICAL TIMELINE:\n' +
+                '   CRITICAL: ALWAYS include WHO made each change. Every entry must show the person responsible.\n' +
+                '   Format: Date: Action by [User Name]\n' +
+                '   Example:\n' +
+                '   - 5/15/2024: Sales Order Created by Michael Strange\n' +
+                '   - 6/21/2024: Customer Deposit ($7,114.36) by Automated System\n' +
+                '   - 7/12/2024: SO Total Reduced to $25,078.64 by Michael Strange\n' +
+                '   - 10/04/2024: Shipping Dates Adjusted by Lizabeth Lopez\n' +
+                '   - 12/15/2024: Order Marked "Billed" by Lizabeth Lopez\n' +
+                '   - 12/13/2025: Credit Memo Generated ($704.25) by System\n\n' +
+                '5. KEY CONTACTS:\n' +
+                '   - Name: Role/Actions (summarize their involvement)\n\n' +
+                '6. DATA QUALITY NOTES:\n' +
+                '   - Migration date issues, missing data, anomalies\n\n' +
+                'Remember: Start with the executive summary narrative, then provide structured detail.';
+        }
+
+        /**
+         * Build user prompt with transaction details and system notes
+         * @param {Object} context - Analysis context with CM, CD, SO, system notes, comparison data
+         * @returns {string} User prompt
+         */
+        function buildTransactionLifecycleUserPrompt(context) {
+            var cm = context.creditMemo;
+            var cd = context.customerDeposit;
+            var so = context.salesOrder;
+            var organizedNotes = context.organizedNotes;
+            var currentLineItems = context.currentLineItems || [];
+            var comparisonData = context.comparisonData || {};
+
+            var prompt = 'TRANSACTION DETAILS:\n';
+            prompt += 'Credit Memo: ' + cm.tranid + ' (' + cm.trandate + ') Amount: $' + cm.amount.toFixed(2) + '\n';
+            prompt += 'Customer Deposit: ' + cd.tranid + ' (' + cd.trandate + ') Amount: $' + cd.amount.toFixed(2) + '\n';
+            prompt += 'Sales Order: ' + so.tranid + ' (' + so.trandate + ') Current Total: $' + so.amount.toFixed(2) + ' Status: ' + so.statusText + '\n';
+            prompt += 'Deposit Date: ' + cd.trandate + '\n';
+            prompt += 'Overpayment Recognition Date: ' + (cm.trandate || 'Unknown') + '\n\n';
+
+            // Add current line items for context
+            if (currentLineItems.length > 0) {
+                prompt += 'CURRENT SALES ORDER LINE ITEMS:\n';
+                prompt += 'Use this to identify WHICH ITEM changed when you see a system note with a lineid:\n';
+                for (var i = 0; i < currentLineItems.length; i++) {
+                    var line = currentLineItems[i];
+                    var itemName = line.displayname || line.itemid || 'Unknown Item';
+                    prompt += 'Line ID ' + line.id + ': Item ' + itemName;
+                    prompt += ' (Seq: ' + line.linesequencenumber + ')';
+                    prompt += ' | Qty: ' + (line.quantity || 0) + ' | Rate: $' + (line.rate || 0);
+                    prompt += ' | Amount: $' + (line.amount || 0) + '\n';
+                }
+                prompt += '\nCRITICAL MATCHING RULE:\n';
+                prompt += 'When a system note has field "TRANLINE.*" and includes a "lineid" value, match that lineid to the Line ID above.\n';
+                prompt += 'Example: System note with lineid="3" means it changed Line ID 3 above.\n';
+                prompt += 'ALWAYS reference the item name/number in your LINE-LEVEL CHANGES section.\n';
+                prompt += 'Format: "Line ID 3 (Item 00229)" or "Line ID 5 (Item Kitchen Cabinet Door)"\n\n';
+            }
+
+            // Add comparison tool findings context
+            if (comparisonData.mismatchVariance !== undefined) {
+                var mismatchAbs = Math.abs(comparisonData.mismatchVariance || 0);
+                var cmAmount = cm.amount;
+                var difference = Math.abs(mismatchAbs - cmAmount);
+                
+                prompt += 'SO-TO-INVOICE COMPARISON TOOL FINDINGS:\n';
+                prompt += 'Mismatch Variance (SO vs Invoice line item errors): $' + mismatchAbs.toFixed(2) + '\n';
+                prompt += 'Credit Memo Amount: $' + cmAmount.toFixed(2) + '\n';
+                
+                if (difference < 0.10) {
+                    // Perfect match - shouldn't see AI button, but if here somehow...
+                    prompt += 'Analysis: Mismatch EXACTLY explains CM (variance matches within $0.10)\n';
+                    prompt += 'AI GUIDANCE: This case is already resolved by comparison tool. Confirm SO changes align with mismatch findings.\n\n';
+                } else if (mismatchAbs > 0.01 && mismatchAbs < cmAmount) {
+                    // Partial match
+                    var unexplained = cmAmount - mismatchAbs;
+                    prompt += 'Analysis: PARTIAL MATCH - Mismatch explains $' + mismatchAbs.toFixed(2) + ' but $' + unexplained.toFixed(2) + ' remains unexplained\n';
+                    prompt += 'AI GUIDANCE: Focus on explaining the $' + unexplained.toFixed(2) + ' unexplained amount. Look for SO changes NOT captured in line item mismatch.\n\n';
+                } else if (mismatchAbs < 0.01) {
+                    // No mismatch
+                    prompt += 'Analysis: NO MISMATCH found in SO vs Invoice line items ($' + mismatchAbs.toFixed(2) + ')\n';
+                    prompt += 'AI GUIDANCE: Analyze full CM amount ($' + cmAmount.toFixed(2) + '). Look for header-level changes, cancellations, or other factors not visible in line items.\n\n';
+                } else {
+                    // Excess mismatch
+                    var excess = mismatchAbs - cmAmount;
+                    prompt += 'Analysis: EXCESS MISMATCH - Variance ($' + mismatchAbs.toFixed(2) + ') exceeds CM ($' + cmAmount.toFixed(2) + ') by $' + excess.toFixed(2) + '\n';
+                    prompt += 'AI GUIDANCE: Complex scenario. Determine if SO changes explain CM, or if mismatch includes unrelated billing errors.\n\n';
+                }
+            }
+
+            prompt += 'SALES ORDER SYSTEM NOTES (FILTERED FOR MEANINGFUL CHANGES):\n\n';
+
+            // Financial changes (highest priority)
+            if (organizedNotes.financial.length > 0) {
+                prompt += '=== FINANCIAL CHANGES (Tier 1 - Critical) ===\n';
+                prompt += JSON.stringify(organizedNotes.financial, null, 2) + '\n\n';
+            } else {
+                prompt += '=== FINANCIAL CHANGES (Tier 1 - Critical) ===\nNone found.\n\n';
+            }
+
+            // Lifecycle changes
+            if (organizedNotes.lifecycle.length > 0) {
+                prompt += '=== LIFECYCLE CHANGES (Tier 2) ===\n';
+                prompt += JSON.stringify(organizedNotes.lifecycle, null, 2) + '\n\n';
+            } else {
+                prompt += '=== LIFECYCLE CHANGES (Tier 2) ===\nNone found.\n\n';
+            }
+
+            // Scheduling changes
+            if (organizedNotes.scheduling.length > 0) {
+                prompt += '=== SCHEDULING CHANGES (Tier 3) ===\n';
+                prompt += JSON.stringify(organizedNotes.scheduling, null, 2) + '\n\n';
+            }
+
+            // Business changes
+            if (organizedNotes.business.length > 0) {
+                prompt += '=== BUSINESS CHANGES (Tier 4) ===\n';
+                prompt += JSON.stringify(organizedNotes.business, null, 2) + '\n\n';
+            }
+
+            // People/other
+            if (organizedNotes.people.length > 0) {
+                prompt += '=== OTHER CHANGES (Tier 5) ===\n';
+                prompt += JSON.stringify(organizedNotes.people, null, 2) + '\n\n';
+            }
+
+            prompt += 'TOTAL SYSTEM NOTES ANALYZED: ' + (organizedNotes.financial.length + organizedNotes.lifecycle.length + 
+                organizedNotes.scheduling.length + organizedNotes.business.length + organizedNotes.people.length) + '\n';
+            prompt += 'EXCLUDED (operational noise): ' + organizedNotes.excluded.length + '\n\n';
+
+            prompt += 'Based on this data, provide your forensic analysis following the output format specified in your system prompt.';
+
+            return prompt;
+        }
+
+        /**
+         * Parse AI decision from Haiku response
+         * @param {string} haikuResponse - Claude Haiku response text
+         * @returns {string} "CONFIRMED" or "NOT CONFIRMED" or "UNKNOWN"
+         */
+        function parseAIDecision(haikuResponse) {
+            if (!haikuResponse) return 'UNKNOWN';
+            
+            var decisionMatch = haikuResponse.match(/---DECISION---\s*(CONFIRMED|NOT CONFIRMED)\s*---END---/i);
+            if (decisionMatch && decisionMatch[1]) {
+                return decisionMatch[1].toUpperCase().trim();
+            }
+            
+            return 'UNKNOWN';
+        }
+
+        /**
+         * Save AI analysis to custom record
+         * @param {Object} params - Save parameters
+         * @returns {number} Custom record internal ID
+         */
+        function saveAIAnalysisToRecord(params) {
+            try {
+                var aiRecord = record.create({
+                    type: 'customrecord_ai_analysis_stored_response',
+                    isDynamic: false
+                });
+
+                aiRecord.setValue({
+                    fieldId: 'custrecord_linked_transaction',
+                    value: params.creditMemoId
+                });
+
+                aiRecord.setValue({
+                    fieldId: 'custrecord_haiku_response',
+                    value: params.haikuResponse ? params.haikuResponse.substring(0, 9999) : '' // Field limit
+                });
+
+                aiRecord.setValue({
+                    fieldId: 'custrecord_user_prompt',
+                    value: params.userPrompt ? params.userPrompt.substring(0, 9999) : ''
+                });
+
+                aiRecord.setValue({
+                    fieldId: 'custrecord_system_prompt',
+                    value: params.systemPrompt ? params.systemPrompt.substring(0, 9999) : ''
+                });
+
+                aiRecord.setValue({
+                    fieldId: 'custrecord_ai_decision',
+                    value: params.aiDecision
+                });
+
+                var recordId = aiRecord.save();
+                log.debug('AI Analysis Saved', 'Custom record ID: ' + recordId);
+                return recordId;
+
+            } catch (e) {
+                log.error('Error saving AI analysis', { error: e.message, stack: e.stack });
+                return null;
+            }
+        }
+
+        /**
+         * Load saved AI analysis from custom record
+         * @param {number} creditMemoId - Credit Memo internal ID
+         * @returns {Object} Saved AI analysis or {found: false}
+         */
+        function loadSavedAIAnalysis(creditMemoId) {
+            try {
+                var aiSearch = search.create({
+                    type: 'customrecord_ai_analysis_stored_response',
+                    filters: [
+                        ['custrecord_linked_transaction', 'anyof', creditMemoId]
+                    ],
+                    columns: [
+                        'internalid',
+                        'custrecord_haiku_response',
+                        'custrecord_ai_decision',
+                        'custrecord_user_prompt',
+                        'custrecord_system_prompt',
+                        'created'
+                    ]
+                });
+
+                var results = aiSearch.run().getRange({ start: 0, end: 1 });
+
+                if (results && results.length > 0) {
+                    var result = results[0];
+                    log.debug('AI Analysis Found', 'Record ID: ' + result.id);
+                    
+                    return {
+                        found: true,
+                        recordId: result.id,
+                        haikuResponse: result.getValue('custrecord_haiku_response'),
+                        aiDecision: result.getValue('custrecord_ai_decision'),
+                        userPrompt: result.getValue('custrecord_user_prompt'),
+                        systemPrompt: result.getValue('custrecord_system_prompt'),
+                        createdDate: result.getValue('created')
+                    };
+                } else {
+                    log.debug('No AI Analysis Found', 'CM ID: ' + creditMemoId);
+                    return { found: false };
+                }
+
+            } catch (e) {
+                log.error('Error loading AI analysis', { error: e.message, stack: e.stack, creditMemoId: creditMemoId });
+                return { found: false, error: e.message };
+            }
+        }
+
+        /**
+         * Main function: Analyze Transaction Lifecycle with Claude AI
+         * @param {number} creditMemoId - Credit Memo internal ID
+         * @param {Object} comparisonData - SO/INV comparison results (mismatch variance, etc.)
+         * @returns {Object} AI analysis result
+         */
+        function analyzeTransactionLifecycleWithAI(creditMemoId, comparisonData) {
+            try {
+                log.debug('AI Analysis Start', 'CM ID: ' + creditMemoId);
+
+                // Get Credit Memo details
+                var cmData = getCreditMemoDetails(creditMemoId);
+                if (!cmData) {
+                    return { error: 'Credit Memo not found', creditMemoId: creditMemoId };
+                }
+
+                // Get Customer Deposit details
+                var cdTranid = extractCDFromMemo(cmData.memo);
+                if (!cdTranid) {
+                    return { error: 'Could not extract Customer Deposit from memo', creditMemo: cmData };
+                }
+
+                var cdData = getCustomerDepositDetails(cdTranid);
+                if (!cdData || !cdData.soId) {
+                    return { error: 'Customer Deposit or Sales Order not found', creditMemo: cmData };
+                }
+
+                // Get Sales Order details
+                var soData = getSalesOrderDetails(cdData.soId);
+                if (!soData) {
+                    return { error: 'Sales Order not found', creditMemo: cmData };
+                }
+
+                // Query System Notes for SO
+                var rawSystemNotes = querySystemNotesForSO(cdData.soId, cdData.trandate, cmData.trandate);
+                
+                // Query current SO line items for context
+                var currentLineItems = querySalesOrderLineItems(cdData.soId);
+                
+                // Organize and filter system notes
+                var organizedNotes = organizeSystemNotesByTier(rawSystemNotes);
+
+                // Build prompts
+                var systemPrompt = buildTransactionLifecycleSystemPrompt();
+                var userPrompt = buildTransactionLifecycleUserPrompt({
+                    creditMemo: cmData,
+                    customerDeposit: cdData,
+                    salesOrder: soData,
+                    organizedNotes: organizedNotes,
+                    currentLineItems: currentLineItems,
+                    comparisonData: comparisonData
+                });
+
+                // Get API key from script parameters directly
+                var currentScript = runtime.getCurrentScript();
+                var apiKey = currentScript.getParameter({ name: 'custscript_claude_api_key_kitchenoverpay' });
+                if (!apiKey) {
+                    return { error: 'Claude API key not found in script parameters. Please set custscript_claude_api_key_kitchenoverpay.' };
+                }
+
+                // Call Claude API (Haiku model for cost efficiency)
+                log.debug('Calling Claude API', 'Model: haiku, System Prompt cached: yes');
+                var claudeResponse = claudeAPI.callClaude({
+                    apiKey: apiKey,
+                    systemPrompt: systemPrompt,
+                    userPrompt: userPrompt,
+                    model: 'haiku',
+                    maxTokens: 2000,
+                    cacheSystemPrompt: true
+                });
+
+                if (!claudeResponse.success) {
+                    return { error: 'Claude API error: ' + claudeResponse.error };
+                }
+
+                var haikuResponse = claudeResponse.analysis;
+                var aiDecision = parseAIDecision(haikuResponse);
+
+                log.debug('AI Analysis Complete', 'Decision: ' + aiDecision);
+
+                // Save to custom record
+                var savedRecordId = saveAIAnalysisToRecord({
+                    creditMemoId: creditMemoId,
+                    haikuResponse: haikuResponse,
+                    userPrompt: userPrompt,
+                    systemPrompt: systemPrompt,
+                    aiDecision: aiDecision
+                });
+
+                return {
+                    success: true,
+                    aiDecision: aiDecision,
+                    haikuResponse: haikuResponse,
+                    systemNotesCount: rawSystemNotes.length,
+                    organizedNotes: organizedNotes,
+                    savedRecordId: savedRecordId,
+                    creditMemo: cmData,
+                    customerDeposit: cdData,
+                    salesOrder: soData
+                };
+
+            } catch (e) {
+                log.error('Error in AI Analysis', { error: e.message, stack: e.stack, creditMemoId: creditMemoId });
+                return { error: e.message, creditMemoId: creditMemoId };
+            }
         }
 
         // ============================================================================
