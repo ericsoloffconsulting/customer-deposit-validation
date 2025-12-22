@@ -308,33 +308,49 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
             html += '</div>';
             html += '<div id="actionPopupOverlay" class="action-popup-overlay" onclick="hideActionPopup()"></div>';
 
-            // SO to Invoice Comparison Modal
-            html += '<div id="soInvComparisonModal" class="comparison-modal">';
-            html += '<div class="comparison-modal-content">';
+            // Unified Explain Modal with Tabs
+            html += '<div id="explainModal" class="comparison-modal">';
+            html += '<div class="comparison-modal-content explain-modal-content">';
             html += '<div class="comparison-modal-header">';
-            html += '<span class="comparison-modal-title">SO to Invoice Line Item Comparison</span>';
-            html += '<span class="comparison-modal-close" onclick="hideComparisonModal()">&times;</span>';
+            html += '<span class="comparison-modal-title">Transaction Analysis</span>';
+            html += '<span class="comparison-modal-close" onclick="hideExplainModal()">&times;</span>';
             html += '</div>';
-            html += '<div id="comparisonModalBody" class="comparison-modal-body">';
-            html += '<div class="comparison-loading">Loading comparison data...</div>';
+            
+            // AI Analysis button at top
+            html += '<div class="ai-button-container">';
+            html += '<button type="button" class="ai-analysis-trigger-btn" onclick="triggerAIAnalysis()" id="aiAnalysisButton">';
+            html += '<span class="ai-icon">🤖</span> AI Analysis with SO Lifecycle</button>';
+            html += '</div>';
+            
+            // Tab navigation
+            html += '<div class="tab-navigation">';
+            html += '<button type="button" class="tab-button active" onclick="switchExplainTab(1)" id="tab-btn-1">SO↔INV Comparison</button>';
+            html += '<button type="button" class="tab-button" onclick="switchExplainTab(2)" id="tab-btn-2">CD Cross-SO Analysis</button>';
+            html += '<button type="button" class="tab-button" onclick="switchExplainTab(3)" id="tab-btn-3" style="display:none;">AI Analysis</button>';
+            html += '</div>';
+            
+            // Tab content containers
+            html += '<div id="explainModalBody" class="comparison-modal-body">';
+            
+            // Tab 1: SO to Invoice Comparison
+            html += '<div id="tab-content-1" class="tab-content active">';
+            html += '<div class="comparison-loading">Loading SO↔INV comparison...</div>';
+            html += '</div>';
+            
+            // Tab 2: Cross-SO Analysis
+            html += '<div id="tab-content-2" class="tab-content">';
+            html += '<div class="comparison-loading">Loading Cross-SO analysis...</div>';
+            html += '</div>';
+            
+            // Tab 3: AI Analysis (initially hidden)
+            html += '<div id="tab-content-3" class="tab-content">';
+            html += '<div class="comparison-loading">Click the AI Analysis button above to begin...</div>';
+            html += '</div>';
+            
             html += '</div>';
             html += '</div>';
             html += '</div>';
-            html += '<div id="comparisonModalOverlay" class="comparison-modal-overlay" onclick="hideComparisonModal()"></div>';
-
-            // Cross-SO Deposit Analysis Modal
-            html += '<div id="crossSOModal" class="comparison-modal">';
-            html += '<div class="comparison-modal-content">';
-            html += '<div class="comparison-modal-header cross-so-header">';
-            html += '<span class="comparison-modal-title">CD→INV Cross-SO Deposit Analysis</span>';
-            html += '<span class="comparison-modal-close" onclick="hideCrossSOModal()">&times;</span>';
-            html += '</div>';
-            html += '<div id="crossSOModalBody" class="comparison-modal-body">';
-            html += '<div class="comparison-loading">Loading cross-SO analysis...</div>';
-            html += '</div>';
-            html += '</div>';
-            html += '</div>';
-            html += '<div id="crossSOModalOverlay" class="comparison-modal-overlay" onclick="hideCrossSOModal()"></div>';
+            html += '<div id="explainModalOverlay" class="comparison-modal-overlay" onclick="hideExplainModal()"></div>';
 
             // Balance As Of Date Control
             html += '<div class="balance-as-of-section">';
@@ -677,11 +693,10 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
 
                 html += '<tr class="' + rowClass + '" id="cm-row-' + cm.cmId + '">';
 
-                // SO to Invoice Comparison action button with AI badge
+                // Unified EXPLAIN button
                 var hasAI = aiAnalysisLookup && aiAnalysisLookup[cm.cmId];
                 html += '<td class="action-btn-cell">';
-                html += '<button type="button" class="so-inv-compare-btn" onclick="showSOInvoiceComparison(' + cm.cmId + ')" title="Compare SO vs Invoice Line Items">SO↔INV</button>';
-                html += '<br><button type="button" class="cross-so-btn" onclick="showCrossSOAnalysis(' + cm.cmId + ')" title="Analyze Cross-SO Deposit Applications">CD Cross-SO</button>';
+                html += '<button type="button" class="explain-btn" onclick="showExplainModal(' + cm.cmId + ')" title="Explain Transaction: SO/INV Comparison, Cross-SO Analysis, AI Insights">EXPLAIN</button>';
                 if (hasAI) {
                     html += '<br><span class="ai-badge" title="AI analysis available">AI</span>';
                 }
@@ -1312,30 +1327,43 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '.success-msg { background-color: #d4edda; color: #155724; padding: 12px; border: 1px solid #c3e6cb; border-radius: 6px; margin: 15px 0; font-size: 13px; }' +
                 '.error-msg { background-color: #f8d7da; color: #721c24; padding: 12px; border: 1px solid #f5c6cb; border-radius: 6px; margin: 15px 0; font-size: 13px; }' +
 
-                /* SO to Invoice Comparison Button */
-                '.so-inv-compare-btn { padding: 4px 8px; font-size: 11px; font-weight: 600; color: #fff; background: linear-gradient(135deg, #1976d2, #1565c0); border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; transition: all 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.2); display: block; margin: 0 auto; }' +
-                '.so-inv-compare-btn:hover { background: linear-gradient(135deg, #1565c0, #0d47a1); transform: translateY(-1px); box-shadow: 0 2px 5px rgba(0,0,0,0.25); }' +
-                
-                /* Cross-SO Analysis Button */
-                '.cross-so-btn { padding: 4px 8px; font-size: 11px; font-weight: 600; color: #fff; background: linear-gradient(135deg, #e91e63, #c2185b); border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; transition: all 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.2); display: block; margin: 6px auto 0; }' +
-                '.cross-so-btn:hover { background: linear-gradient(135deg, #c2185b, #ad1457); transform: translateY(-1px); box-shadow: 0 2px 5px rgba(0,0,0,0.25); }' +
+                /* EXPLAIN Button */
+                '.explain-btn { padding: 8px 16px; font-size: 12px; font-weight: 700; color: #fff; background: linear-gradient(135deg, #6366f1, #4f46e5); border: none; border-radius: 6px; cursor: pointer; white-space: nowrap; transition: all 0.2s; box-shadow: 0 2px 4px rgba(99,102,241,0.3); display: block; margin: 0 auto; text-transform: uppercase; letter-spacing: 0.5px; }' +
+                '.explain-btn:hover { background: linear-gradient(135deg, #4f46e5, #4338ca); transform: translateY(-1px); box-shadow: 0 3px 8px rgba(99,102,241,0.4); }' +
                 
                 '.action-btn-cell { text-align: center !important; padding: 4px !important; }' +
                 '.ai-badge { display: block; margin: 6px auto 0; padding: 4px 8px; font-size: 11px; font-weight: 600; color: #fff; background: linear-gradient(135deg, #7c4dff, #651fff); border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px; box-shadow: 0 1px 3px rgba(124,77,255,0.3); cursor: help; transition: all 0.2s; }' +
                 '.ai-badge:hover { background: linear-gradient(135deg, #651fff, #6200ea); box-shadow: 0 2px 4px rgba(124,77,255,0.4); transform: translateY(-1px); }' +
 
-                /* SO to Invoice Comparison Modal */
+                /* Unified Explain Modal */
                 '.comparison-modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 99998; }' +
                 '.comparison-modal-overlay.visible { display: block; }' +
                 '.comparison-modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border-radius: 10px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); z-index: 99999; width: 95%; max-width: 1400px; max-height: 90vh; overflow: hidden; }' +
                 '.comparison-modal.visible { display: block; }' +
                 '.comparison-modal-content { display: flex; flex-direction: column; height: 100%; max-height: 90vh; }' +
-                '.comparison-modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; background: linear-gradient(135deg, #1976d2, #1565c0); color: white; border-radius: 10px 10px 0 0; }' +
-                '.cross-so-header { background: linear-gradient(135deg, #e91e63, #c2185b); }' +
+                '.explain-modal-content { max-width: 1400px; }' +
+                '.comparison-modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; background: linear-gradient(135deg, #6366f1, #4f46e5); color: white; border-radius: 10px 10px 0 0; }' +
                 '.comparison-modal-title { font-size: 18px; font-weight: 700; }' +
                 '.comparison-modal-close { cursor: pointer; font-size: 28px; line-height: 1; opacity: 0.8; padding: 0 8px; }' +
                 '.comparison-modal-close:hover { opacity: 1; }' +
+                
+                /* AI Analysis Button in Modal */
+                '.ai-button-container { padding: 16px 20px; background: #f8f9fa; border-bottom: 1px solid #dee2e6; }' +
+                '.ai-analysis-trigger-btn { padding: 10px 20px; font-size: 14px; font-weight: 700; color: #fff; background: linear-gradient(135deg, #7c4dff, #651fff); border: none; border-radius: 6px; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 4px rgba(124,77,255,0.3); width: 100%; text-align: center; }' +
+                '.ai-analysis-trigger-btn:hover { background: linear-gradient(135deg, #651fff, #6200ea); box-shadow: 0 3px 8px rgba(124,77,255,0.4); transform: translateY(-1px); }' +
+                '.ai-analysis-trigger-btn:disabled { background: #ccc; cursor: not-allowed; opacity: 0.6; }' +
+                '.ai-icon { font-size: 16px; margin-right: 6px; }' +
+                
+                /* Tab Navigation */
+                '.tab-navigation { display: flex; background: #f8f9fa; border-bottom: 2px solid #dee2e6; padding: 0 20px; }' +
+                '.tab-button { flex: 1; padding: 12px 16px; font-size: 14px; font-weight: 600; color: #666; background: transparent; border: none; border-bottom: 3px solid transparent; cursor: pointer; transition: all 0.2s; }' +
+                '.tab-button:hover { color: #333; background: #e9ecef; }' +
+                '.tab-button.active { color: #6366f1; border-bottom-color: #6366f1; background: white; }' +
+                
+                /* Tab Content */
                 '.comparison-modal-body { padding: 20px; overflow-y: auto; flex: 1; }' +
+                '.tab-content { display: none; }' +
+                '.tab-content.active { display: block; }' +
                 '.comparison-loading { text-align: center; padding: 60px 20px; color: #666; font-size: 16px; }' +
 
                 /* Comparison Summary Cards */
@@ -1405,6 +1433,9 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
          */
         function getJavaScript(scriptUrl) {
             return '' +
+                /* Define scriptUrl for fetch calls */
+                'var scriptUrl = "' + scriptUrl + '";' +
+                '' +
                 /* Event delegation for collapsible sections */
                 '(function() {' +
                 '    document.addEventListener(\'click\', function(e) {' +
@@ -1917,28 +1948,90 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '}' +
                 '' +
                 '/* =========================================== */' +
-                '/* SO TO INVOICE COMPARISON FUNCTIONS         */' +
+                '/* UNIFIED EXPLAIN MODAL FUNCTIONS            */' +
                 '/* =========================================== */' +
                 '' +
-                '/* Show SO to Invoice Comparison Modal */' +
-                'function showSOInvoiceComparison(creditMemoId) {' +
-                '    var modal = document.getElementById("soInvComparisonModal");' +
-                '    var overlay = document.getElementById("comparisonModalOverlay");' +
-                '    var body = document.getElementById("comparisonModalBody");' +
+                'var currentCreditMemoId = null;' +
+                'var currentTab = 1;' +
+                'var tab1Loaded = false;' +
+                'var tab2Loaded = false;' +
+                '' +
+                '/* Show Unified Explain Modal */' +
+                'function showExplainModal(creditMemoId) {' +
+                '    currentCreditMemoId = creditMemoId;' +
+                '    currentTab = 1;' +
+                '    tab1Loaded = false;' +
+                '    tab2Loaded = false;' +
                 '    ' +
-                '    body.innerHTML = "<div class=\\"comparison-loading\\">Loading comparison data...</div>";' +
+                '    var modal = document.getElementById("explainModal");' +
+                '    var overlay = document.getElementById("explainModalOverlay");' +
+                '    ' +
+                '    /* Reset tabs */' +
+                '    document.getElementById("tab-btn-1").classList.add("active");' +
+                '    document.getElementById("tab-btn-2").classList.remove("active");' +
+                '    document.getElementById("tab-btn-3").classList.remove("active");' +
+                '    document.getElementById("tab-btn-3").style.display = "none";' +
+                '    ' +
+                '    document.getElementById("tab-content-1").classList.add("active");' +
+                '    document.getElementById("tab-content-2").classList.remove("active");' +
+                '    document.getElementById("tab-content-3").classList.remove("active");' +
+                '    document.getElementById("tab-content-3").innerHTML = "<div class=\\"comparison-loading\\">Click the AI Analysis button above to begin...</div>";' +
+                '    ' +
+                '    /* Show modal */' +
                 '    modal.classList.add("visible");' +
                 '    overlay.classList.add("visible");' +
+                '    ' +
+                '    /* Load Tab 1 immediately */' +
+                '    loadTab1Data();' +
+                '}' +
+                '' +
+                '/* Hide Explain Modal */' +
+                'function hideExplainModal() {' +
+                '    document.getElementById("explainModal").classList.remove("visible");' +
+                '    document.getElementById("explainModalOverlay").classList.remove("visible");' +
+                '    currentCreditMemoId = null;' +
+                '}' +
+                '' +
+                '/* Switch Between Tabs */' +
+                'function switchExplainTab(tabNumber) {' +
+                '    currentTab = tabNumber;' +
+                '    ' +
+                '    /* Update tab buttons */' +
+                '    for (var i = 1; i <= 3; i++) {' +
+                '        var btn = document.getElementById("tab-btn-" + i);' +
+                '        var content = document.getElementById("tab-content-" + i);' +
+                '        if (i === tabNumber) {' +
+                '            btn.classList.add("active");' +
+                '            content.classList.add("active");' +
+                '        } else {' +
+                '            btn.classList.remove("active");' +
+                '            content.classList.remove("active");' +
+                '        }' +
+                '    }' +
+                '    ' +
+                '    /* Load tab data if not already loaded */' +
+                '    if (tabNumber === 1 && !tab1Loaded) {' +
+                '        loadTab1Data();' +
+                '    } else if (tabNumber === 2 && !tab2Loaded) {' +
+                '        loadTab2Data();' +
+                '    }' +
+                '}' +
+                '' +
+                '/* Load Tab 1: SO↔INV Comparison */' +
+                'function loadTab1Data() {' +
+                '    var body = document.getElementById("tab-content-1");' +
+                '    body.innerHTML = "<div class=\\"comparison-loading\\">Loading SO\u2194INV comparison...</div>";' +
                 '    ' +
                 '    fetch("' + scriptUrl + '", {' +
                 '        method: "POST",' +
                 '        headers: { "Content-Type": "application/json" },' +
-                '        body: JSON.stringify({ action: "soInvoiceComparison", creditMemoId: creditMemoId })' +
+                '        body: JSON.stringify({ action: "soInvoiceComparison", creditMemoId: currentCreditMemoId })' +
                 '    })' +
                 '    .then(function(response) { return response.json(); })' +
                 '    .then(function(result) {' +
                 '        if (result.success && result.data) {' +
-                '            renderComparisonResult(result.data);' +
+                '            renderTab1Result(result.data);' +
+                '            tab1Loaded = true;' +
                 '        } else {' +
                 '            body.innerHTML = "<div class=\\"error-msg\\">Error: " + (result.data && result.data.error ? result.data.error : "Unknown error") + "</div>";' +
                 '        }' +
@@ -1948,35 +2041,21 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    });' +
                 '}' +
                 '' +
-                '/* Hide Comparison Modal */' +
-                'function hideComparisonModal() {' +
-                '    document.getElementById("soInvComparisonModal").classList.remove("visible");' +
-                '    document.getElementById("comparisonModalOverlay").classList.remove("visible");' +
-                '}' +
-                '' +
-                '/* =========================================== */' +
-                '/* CROSS-SO DEPOSIT ANALYSIS FUNCTIONS        */' +
-                '/* =========================================== */' +
-                '' +
-                '/* Show Cross-SO Deposit Analysis Modal */' +
-                'function showCrossSOAnalysis(creditMemoId) {' +
-                '    var modal = document.getElementById("crossSOModal");' +
-                '    var overlay = document.getElementById("crossSOModalOverlay");' +
-                '    var body = document.getElementById("crossSOModalBody");' +
-                '    ' +
-                '    body.innerHTML = "<div class=\\"comparison-loading\\">Loading cross-SO analysis...</div>";' +
-                '    modal.classList.add("visible");' +
-                '    overlay.classList.add("visible");' +
+                '/* Load Tab 2: Cross-SO Analysis */' +
+                'function loadTab2Data() {' +
+                '    var body = document.getElementById("tab-content-2");' +
+                '    body.innerHTML = "<div class=\\"comparison-loading\\">Loading Cross-SO analysis...</div>";' +
                 '    ' +
                 '    fetch("' + scriptUrl + '", {' +
                 '        method: "POST",' +
                 '        headers: { "Content-Type": "application/json" },' +
-                '        body: JSON.stringify({ action: "crossSOAnalysis", creditMemoId: creditMemoId })' +
+                '        body: JSON.stringify({ action: "crossSOAnalysis", creditMemoId: currentCreditMemoId })' +
                 '    })' +
                 '    .then(function(response) { return response.json(); })' +
                 '    .then(function(result) {' +
                 '        if (result.success && result.data) {' +
-                '            renderCrossSOResult(result.data);' +
+                '            renderTab2Result(result.data);' +
+                '            tab2Loaded = true;' +
                 '        } else {' +
                 '            body.innerHTML = "<div class=\\"error-msg\\">Error: " + (result.data && result.data.error ? result.data.error : "Unknown error") + "</div>";' +
                 '        }' +
@@ -1986,116 +2065,50 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    });' +
                 '}' +
                 '' +
-                '/* Hide Cross-SO Modal */' +
-                'function hideCrossSOModal() {' +
-                '    document.getElementById("crossSOModal").classList.remove("visible");' +
-                '    document.getElementById("crossSOModalOverlay").classList.remove("visible");' +
+                '/* Trigger AI Analysis */' +
+                'function triggerAIAnalysis() {' +
+                '    var btn = document.getElementById("aiAnalysisButton");' +
+                '    var tabBtn = document.getElementById("tab-btn-3");' +
+                '    var body = document.getElementById("tab-content-3");' +
+                '    ' +
+                '    /* Show tab 3 and switch to it */' +
+                '    tabBtn.style.display = "block";' +
+                '    switchExplainTab(3);' +
+                '    ' +
+                '    /* Disable button and show loading */' +
+                '    btn.disabled = true;' +
+                '    btn.innerHTML = "<span class=\\"ai-icon\\">\ud83e\udd16</span> Running AI Analysis...";' +
+                '    body.innerHTML = "<div class=\\"comparison-loading\\">Running AI Analysis... This may take 10-30 seconds...</div>";' +
+                '    ' +
+                '    fetch("' + scriptUrl + '", {' +
+                '        method: "POST",' +
+                '        headers: { "Content-Type": "application/json" },' +
+                '        body: JSON.stringify({ action: "analyzeTransactions", creditMemoId: currentCreditMemoId })' +
+                '    })' +
+                '    .then(function(response) { return response.json(); })' +
+                '    .then(function(result) {' +
+                '        btn.disabled = false;' +
+                '        btn.innerHTML = "<span class=\\"ai-icon\\">\ud83e\udd16</span> AI Analysis with SO Lifecycle";' +
+                '        ' +
+                '        if (result.success && result.data) {' +
+                '            renderTab3Result(result.data);' +
+                '        } else {' +
+                '            body.innerHTML = "<div class=\\"error-msg\\">Error: " + (result.data && result.data.error ? result.data.error : "Unknown error") + "</div>";' +
+                '        }' +
+                '    })' +
+                '    .catch(function(err) {' +
+                '        btn.disabled = false;' +
+                '        btn.innerHTML = "<span class=\\"ai-icon\\">\ud83e\udd16</span> AI Analysis with SO Lifecycle";' +
+                '        body.innerHTML = "<div class=\\"error-msg\\">Error running AI analysis: " + err.message + "</div>";' +
+                '    });' +
                 '}' +
                 '' +
-                '/* Render Cross-SO Analysis Result */' +
-                'function renderCrossSOResult(data) {' +
-                '    var body = document.getElementById("crossSOModalBody");' +
+                '/* Render Tab 1: SO↔INV Comparison Result */' +
+                'function renderTab1Result(data) {' +
+                '    var body = document.getElementById("tab-content-1");' +
                 '    ' +
                 '    if (data.error) {' +
                 '        body.innerHTML = "<div class=\\"error-msg\\"><strong>Error:</strong> " + data.error + "</div>";' +
-                '        return;' +
-                '    }' +
-                '    ' +
-                '    var html = "";' +
-                '    ' +
-                '    /* Summary Cards */' +
-                '    html += "<div class=\\"comparison-summary\\">";' +
-                '    html += "<div class=\\"comparison-card\\">";' +
-                '    html += "<div class=\\"comparison-card-label\\">Total Applications</div>";' +
-                '    html += "<div class=\\"comparison-card-value\\">" + data.totalApplications + "</div>";' +
-                '    html += "</div>";' +
-                '    html += "<div class=\\"comparison-card\\">";' +
-                '    html += "<div class=\\"comparison-card-label\\">Same-SO Matches</div>";' +
-                '    html += "<div class=\\"comparison-card-value\\" style=\\"color:#28a745;\\">" + data.matches + "</div>";' +
-                '    html += "</div>";' +
-                '    html += "<div class=\\"comparison-card\\">";' +
-                '    html += "<div class=\\"comparison-card-label\\">Cross-SO Mismatches</div>";' +
-                '    html += "<div class=\\"comparison-card-value\\" style=\\"color:#dc3545;\\">" + data.mismatches + "</div>";' +
-                '    html += "</div>";' +
-                '    html += "<div class=\\"comparison-card\\">";' +
-                '    html += "<div class=\\"comparison-card-label\\">Non-Invoice Apps</div>";' +
-                '    html += "<div class=\\"comparison-card-value\\" style=\\"color:#ff9800;\\">" + data.noInvoice + "</div>";' +
-                '    html += "</div>";' +
-                '    html += "</div>";' +
-                '    ' +
-                '    /* Overpayment Source Info */' +
-                '    if (data.overpaymentCDTranId) {' +
-                '        html += "<div style=\\"margin:15px 0;padding:10px;background:#fff3cd;border:1px solid #ffc107;border-radius:4px;\\"><strong>🎯 Overpayment Source CD:</strong> " + data.overpaymentCDTranId + " (overpayment invoice highlighted below)</div>";' +
-                '    }' +
-                '    ' +
-                '    /* Applications Table */' +
-                '    if (data.applications && data.applications.length > 0) {' +
-                '        html += "<h3 style=\\"margin:20px 0 10px;\\">Deposit Applications</h3>";' +
-                '        html += "<table class=\\"comparison-table\\">";' +
-                '        html += "<thead><tr>";' +
-                '        html += "<th>Status</th>";' +
-                '        html += "<th>Customer Deposit</th>";' +
-                '        html += "<th>CD Source SO</th>";' +
-                '        html += "<th>Invoice</th>";' +
-                '        html += "<th>INV Source SO</th>";' +
-                '        html += "<th>Amount Applied</th>";' +
-                '        html += "</tr></thead><tbody>";' +
-                '        ' +
-                '        for (var i = 0; i < data.applications.length; i++) {' +
-                '            var app = data.applications[i];' +
-                '            ' +
-                '            /* Determine row class */' +
-                '            var rowClass = "";' +
-                '            if (app.isOverpaymentInv) {' +
-                '                rowClass = "overpayment-row";' +
-                '            } else if (app.status === "cross-so") {' +
-                '                rowClass = "mismatch-row";' +
-                '            } else if (app.status === "no-invoice") {' +
-                '                rowClass = "no-invoice-row";' +
-                '            } else {' +
-                '                rowClass = "match-row";' +
-                '            }' +
-                '            ' +
-                '            /* Determine status badge */' +
-                '            var statusBadge = "";' +
-                '            if (app.status === "cross-so") {' +
-                '                statusBadge = "<span class=\\"status-badge status-error\\">CROSS-SO</span>";' +
-                '            } else if (app.status === "no-invoice") {' +
-                '                statusBadge = "<span class=\\"status-badge status-warning\\">NO INVOICE</span>";' +
-                '            } else {' +
-                '                statusBadge = "<span class=\\"status-badge status-success\\">MATCH</span>";' +
-                '            }' +
-                '            ' +
-                '            /* Add overpayment indicator ONLY for overpayment invoice */' +
-                '            if (app.isOverpaymentInv) {' +
-                '                statusBadge += " <span class=\\"status-badge status-overpayment\\">🎯 OVERPAYMENT</span>";' +
-                '            }' +
-                '            ' +
-                '            html += "<tr class=\\"" + rowClass + "\\">";' +
-                '            html += "<td>" + statusBadge + "</td>";' +
-                '            html += "<td><a href=\\"/app/accounting/transactions/custdep.nl?id=" + app.cdId + "\\" target=\\"_blank\\">" + app.cdTranId + "</a></td>";' +
-                '            html += "<td>" + (app.cdSourceSO || "N/A") + "</td>";' +
-                '            html += "<td>" + (app.invTranId ? "<a href=\\"/app/accounting/transactions/custinvc.nl?id=" + app.invId + "\\" target=\\"_blank\\">" + app.invTranId + "</a>" : "<em style=\\"color:#999;\\">N/A</em>") + "</td>";' +
-                '            html += "<td>" + (app.invSourceSO || "N/A") + "</td>";' +
-                '            html += "<td>" + formatCompCurrency(app.amount) + "</td>";' +
-                '            html += "</tr>";' +
-                '        }' +
-                '        ' +
-                '        html += "</tbody></table>";' +
-                '    }' +
-                '    ' +
-                '    body.innerHTML = html;' +
-                '}' +
-                '' +
-                '/* Render Comparison Result */' +
-                'function renderComparisonResult(data) {' +
-                '    var body = document.getElementById("comparisonModalBody");' +
-                '    ' +
-                '    if (data.error) {' +
-                '        body.innerHTML = "<div class=\\"error-msg\\"><strong>Error:</strong> " + data.error + "</div>";' +
-                '        if (data.memo) {' +
-                '            body.innerHTML += "<div style=\\"margin-top:10px;padding:10px;background:#f5f5f5;border-radius:4px;\\"><strong>Memo field:</strong> " + data.memo + "</div>";' +
-                '        }' +
                 '        return;' +
                 '    }' +
                 '    ' +
@@ -2206,23 +2219,6 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    var conclusionClass = Math.abs(mismatchVar) < 0.01 ? "match" : "mismatch";' +
                 '    html += "<div class=\\"comparison-conclusion " + conclusionClass + "\\">" + (data.conclusion || "Analysis complete") + "</div>";' +
                 '    ' +
-                '    /* AI Analysis Button - Only show if mismatch does NOT fully explain CM */' +
-                '    var showAIButton = !shouldHideAIButton(mismatchVar, cmTotalAmt);' +
-                '    if (showAIButton) {' +
-                '        html += "<div style=\\"margin-top:20px;padding:15px;background:#e3f2fd;border:1px solid #1976d2;border-radius:6px;\\">";' +
-                '        html += "<button type=\\"button\\" id=\\"aiAnalysisBtn\\" class=\\"ai-analysis-btn\\" onclick=\\"runAIAnalysis(" + data.creditMemo.id + ")\\" style=\\"padding:10px 20px;background:#1976d2;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px;font-weight:600;\\">🤖 Analyze Transaction Lifecycle with AI</button>";' +
-                '        html += "<div style=\\"margin-top:8px;font-size:12px;color:#555;\\">";' +
-                '        html += "The AI will analyze the sales order&#39;s transaction lifecycle to determine if changes to the order explain this overpayment credit memo.";' +
-                '        html += "</div>";' +
-                '        html += "</div>";' +
-                '        ' +
-                '        /* AI Results Container */' +
-                '        html += "<div id=\\"aiResultsContainer\\" style=\\"margin-top:20px;\\">";' +
-                '        html += "<div id=\\"aiResultsContent\\" style=\\"padding:20px;background:#f5f5f5;border:1px solid #ccc;border-radius:6px;\\">";' +
-                '        html += "</div>";' +
-                '        html += "</div>";' +
-                '    }' +
-                '    ' +
                 '    /* Problem Items Summary - moved above table */' +
                 '    if (data.problemItems && data.problemItems.length > 0) {' +
                 '        html += "<div style=\\"margin-top:20px;padding:15px;background:#fff3e0;border:1px solid #f57c00;border-radius:6px;\\">" ;' +
@@ -2314,12 +2310,124 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    html += "</tbody></table></div>";' +
                 '    ' +
                 '    body.innerHTML = html;' +
+                '}' +
+                '' +
+                '/* Render Tab 2: Cross-SO Analysis Result (rename from renderCrossSOResult) */' +
+                'function renderTab2Result(data) {' +
+                '    var body = document.getElementById("tab-content-2");' +
                 '    ' +
-                '    if (showAIButton && data.creditMemo && data.creditMemo.id) {' +
-                '        setTimeout(function() {' +
-                '            loadExistingAIAnalysis(data.creditMemo.id);' +
-                '        }, 100);' +
+                '    if (data.error) {' +
+                '        body.innerHTML = "<div class=\\"error-msg\\"><strong>Error:</strong> " + data.error + "</div>";' +
+                '        if (data.memo) {' +
+                '            body.innerHTML += "<div style=\\"margin-top:10px;padding:10px;background:#f5f5f5;border-radius:4px;\\"><strong>Memo field:</strong> " + data.memo + "</div>";' +
+                '        }' +
+                '        return;' +
                 '    }' +
+                '    ' +
+                '    var html = "";' +
+                '    ' +
+                '    /* Summary Cards */' +
+                '    html += "<div class=\\"comparison-summary\\">";' +
+                '    html += "<div class=\\"comparison-card\\">";' +
+                '    html += "<div class=\\"comparison-card-label\\">Total Applications</div>";' +
+                '    html += "<div class=\\"comparison-card-value\\">" + data.totalApplications + "</div>";' +
+                '    html += "</div>";' +
+                '    html += "<div class=\\"comparison-card\\">";' +
+                '    html += "<div class=\\"comparison-card-label\\">Same-SO Matches</div>";' +
+                '    html += "<div class=\\"comparison-card-value\\" style=\\"color:#28a745;\\">" + data.matches + "</div>";' +
+                '    html += "</div>";' +
+                '    html += "<div class=\\"comparison-card\\">";' +
+                '    html += "<div class=\\"comparison-card-label\\">Cross-SO Mismatches</div>";' +
+                '    html += "<div class=\\"comparison-card-value\\" style=\\"color:#dc3545;\\">" + data.mismatches + "</div>";' +
+                '    html += "</div>";' +
+                '    html += "<div class=\\"comparison-card\\">";' +
+                '    html += "<div class=\\"comparison-card-label\\">Non-Invoice Apps</div>";' +
+                '    html += "<div class=\\"comparison-card-value\\" style=\\"color:#ff9800;\\">" + data.noInvoice + "</div>";' +
+                '    html += "</div>";' +
+                '    html += "</div>";' +
+                '    ' +
+                '    /* Overpayment Source Info */' +
+                '    if (data.overpaymentCDTranId) {' +
+                '        html += "<div style=\\"margin:15px 0;padding:10px;background:#fff3cd;border:1px solid #ffc107;border-radius:4px;\\"><strong>🎯 Overpayment Source CD:</strong> " + data.overpaymentCDTranId + " (overpayment invoice highlighted below)</div>";' +
+                '    }' +
+                '    ' +
+                '    /* Applications Table */' +
+                '    if (data.applications && data.applications.length > 0) {' +
+                '        html += "<h3 style=\\"margin:20px 0 10px;\\">Deposit Applications</h3>";' +
+                '        html += "<table class=\\"comparison-table\\">";' +
+                '        html += "<thead><tr>";' +
+                '        html += "<th>Status</th>";' +
+                '        html += "<th>Customer Deposit</th>";' +
+                '        html += "<th>CD Source SO</th>";' +
+                '        html += "<th>Invoice</th>";' +
+                '        html += "<th>INV Source SO</th>";' +
+                '        html += "<th>Amount Applied</th>";' +
+                '        html += "<th>Applied To</th>";' +
+                '        html += "</tr></thead><tbody>";' +
+                '        ' +
+                '        for (var i = 0; i < data.applications.length; i++) {' +
+                '            var app = data.applications[i];' +
+                '            ' +
+                '            /* Determine row class */' +
+                '            var rowClass = "";' +
+                '            if (app.isOverpaymentInv) {' +
+                '                rowClass = "overpayment-row";' +
+                '            } else if (app.status === "cross-so") {' +
+                '                rowClass = "mismatch-row";' +
+                '            } else if (app.status === "no-invoice") {' +
+                '                rowClass = "no-invoice-row";' +
+                '            } else {' +
+                '                rowClass = "match-row";' +
+                '            }' +
+                '            ' +
+                '            /* Determine status badge */' +
+                '            var statusBadge = "";' +
+                '            if (app.status === "cross-so") {' +
+                '                statusBadge = "<span class=\\"status-badge status-error\\">CROSS-SO</span>";' +
+                '            } else if (app.status === "no-invoice") {' +
+                '                statusBadge = "<span class=\\"status-badge status-warning\\">NO INVOICE</span>";' +
+                '            } else {' +
+                '                statusBadge = "<span class=\\"status-badge status-success\\">MATCH</span>";' +
+                '            }' +
+                '            ' +
+                '            /* Add overpayment indicator ONLY for overpayment invoice */' +
+                '            if (app.isOverpaymentInv) {' +
+                '                statusBadge += " <span class=\\"status-badge status-overpayment\\">🎯 OVERPAYMENT</span>";' +
+                '            }' +
+                '            ' +
+                '            /* Build Applied To column with transaction type and link */' +
+                '            var appliedToCell = "";' +
+                '            if (app.appliedTranType && app.appliedTranNumber && app.appliedTranId) {' +
+                '                var tranUrl = "";' +
+                '                if (app.appliedTranType === "Invoice") {' +
+                '                    tranUrl = "/app/accounting/transactions/custinvc.nl?id=" + app.appliedTranId;' +
+                '                } else if (app.appliedTranType === "Refund") {' +
+                '                    tranUrl = "/app/accounting/transactions/custref.nl?id=" + app.appliedTranId;' +
+                '                } else if (app.appliedTranType === "Credit Memo") {' +
+                '                    tranUrl = "/app/accounting/transactions/custcred.nl?id=" + app.appliedTranId;' +
+                '                } else {' +
+                '                    tranUrl = "/app/common/entity/custjob.nl?id=" + app.appliedTranId;' +
+                '                }' +
+                '                appliedToCell = "<a href=\\"" + tranUrl + "\\" target=\\"_blank\\">" + app.appliedTranType + " " + app.appliedTranNumber + "</a>";' +
+                '            } else {' +
+                '                appliedToCell = "<em style=\\"color:#999;\\">N/A</em>";' +
+                '            }' +
+                '            ' +
+                '            html += "<tr class=\\"" + rowClass + "\\">";' +
+                '            html += "<td>" + statusBadge + "</td>";' +
+                '            html += "<td><a href=\\"/app/accounting/transactions/custdep.nl?id=" + app.cdId + "\\" target=\\"_blank\\">" + app.cdTranId + "</a></td>";' +
+                '            html += "<td>" + (app.cdSourceSO || "N/A") + "</td>";' +
+                '            html += "<td>" + (app.invTranId ? "<a href=\\"/app/accounting/transactions/custinvc.nl?id=" + app.invId + "\\" target=\\"_blank\\">" + app.invTranId + "</a>" : "<em style=\\"color:#999;\\">N/A</em>") + "</td>";' +
+                '            html += "<td>" + (app.invSourceSO || "N/A") + "</td>";' +
+                '            html += "<td>" + formatCompCurrency(app.amount) + "</td>";' +
+                '            html += "<td>" + appliedToCell + "</td>";' +
+                '            html += "</tr>";' +
+                '        }' +
+                '        ' +
+                '        html += "</tbody></table>";' +
+                '    }' +
+                '    ' +
+                '    body.innerHTML = html;' +
                 '}' +
                 '' +
                 '/* Format currency for comparison modal - always positive with $ */' +
@@ -2455,11 +2563,17 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '' +
                 '/* Render AI Analysis Result */' +
                 'function renderAIAnalysisResult(data) {' +
-                '    var resultsContent = document.getElementById("aiResultsContent");' +
-                '    if (!resultsContent) return;' +
+                '    /* Legacy function - now redirects to Tab 3 */' +
+                '    renderTab3Result(data);' +
+                '}' +
+                '' +
+                '/* Render Tab 3: AI Analysis Result */' +
+                'function renderTab3Result(data) {' +
+                '    var body = document.getElementById("tab-content-3");' +
+                '    if (!body) return;' +
                 '    ' +
                 '    if (data.error) {' +
-                '        resultsContent.innerHTML = "<div style=\\"color:#d32f2f;padding:15px;\\">" + data.error + "</div>";' +
+                '        body.innerHTML = "<div class=\\"error-msg\\"><strong>Error:</strong> " + data.error + "</div>";' +
                 '        return;' +
                 '    }' +
                 '    ' +
@@ -2468,7 +2582,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    var decisionClass = decision === "CONFIRMED" ? "success" : (decision === "NOT CONFIRMED" ? "error" : "warning");' +
                 '    var decisionBg = decision === "CONFIRMED" ? "#e8f5e9" : (decision === "NOT CONFIRMED" ? "#ffebee" : "#fff3e0");' +
                 '    var decisionBorder = decision === "CONFIRMED" ? "#4caf50" : (decision === "NOT CONFIRMED" ? "#d32f2f" : "#f57c00");' +
-                '    var decisionIcon = decision === "CONFIRMED" ? "✓" : (decision === "NOT CONFIRMED" ? "✗" : "?");' +
+                '    var decisionIcon = decision === "CONFIRMED" ? "\u2713" : (decision === "NOT CONFIRMED" ? "\u2717" : "?");' +
                 '    ' +
                 '    html += "<div style=\\"padding:15px;background:" + decisionBg + ";border:2px solid " + decisionBorder + ";border-radius:6px;margin-bottom:15px;\\">" ;' +
                 '    html += "<div style=\\"font-size:16px;font-weight:700;color:#333;\\">" + decisionIcon + " AI DECISION: " + decision + "</div>";' +
@@ -2480,7 +2594,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    html += "</div>";' +
                 '    ' +
                 '    html += "<div style=\\"background:white;padding:20px;border:1px solid #ddd;border-radius:6px;\\">" ;' +
-                '    html += "<h3 style=\\"margin:0 0 15px 0;font-size:16px;color:#1976d2;\\">🤖 AI Forensic Analysis</h3>";' +
+                '    html += "<h3 style=\\"margin:0 0 15px 0;font-size:16px;color:#7c4dff;\\\">\ud83e\udd16 AI Forensic Analysis</h3>";' +
                 '    ' +
                 '    var responseText = data.haikuResponse || "No response received";' +
                 '    ' +
@@ -2493,7 +2607,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '        html += "Lifecycle: " + (data.organizedNotes && data.organizedNotes.lifecycle ? data.organizedNotes.lifecycle.length : 0);' +
                 '    }' +
                 '    if (data.savedRecordId) {' +
-                '        html += (data.systemNotesCount !== undefined ? " | " : "") + "<span style=\\"color:#1976d2;\\">Record ID: " + data.savedRecordId + "</span>";' +
+                '        html += (data.systemNotesCount !== undefined ? " | " : "") + "<span style=\\"color:#7c4dff;\\">Record ID: " + data.savedRecordId + "</span>";' +
                 '    }' +
                 '    if (data.createdDate) {' +
                 '        html += " | <span style=\\"color:#777;\\">Created: " + data.createdDate + "</span>";' +
@@ -2501,7 +2615,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    html += "</div>";' +
                 '    html += "</div>";' +
                 '    ' +
-                '    resultsContent.innerHTML = html;' +
+                '    body.innerHTML = html;' +
                 '}' +
                 '' +
                 '/* Client-side HTML escape */' +
@@ -3320,6 +3434,109 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
         }
 
         // ============================================================================
+        // SO LIFECYCLE SYSTEM NOTES FUNCTIONS
+        // ============================================================================
+
+        /**
+         * Gets Sales Order lifecycle data (system notes) for display in modal
+         * @param {number} creditMemoId - Internal ID of the Credit Memo
+         * @returns {Object} SO info and system notes
+         */
+        function getSOLifecycleData(creditMemoId) {
+            try {
+                log.debug('getSOLifecycleData', 'Starting for CM ID: ' + creditMemoId);
+
+                // Get Credit Memo details using existing helper
+                var cmData = getCreditMemoDetails(creditMemoId);
+                if (!cmData) {
+                    return { error: 'Credit Memo not found' };
+                }
+
+                // Extract CD tranid from memo using existing helper
+                var cdTranid = extractCDFromMemo(cmData.memo);
+                if (!cdTranid) {
+                    return { error: 'Could not extract Customer Deposit from Credit Memo memo field' };
+                }
+
+                log.debug('Extracted CD', cdTranid);
+
+                // Get Customer Deposit and linked SO using existing helper
+                var cdData = getCustomerDepositDetails(cdTranid);
+                if (!cdData || !cdData.soId) {
+                    return { error: 'Customer Deposit or linked Sales Order not found for ' + cdTranid };
+                }
+
+                log.debug('CD Found', {
+                    cdId: cdData.id,
+                    cdTranid: cdData.tranid,
+                    soId: cdData.soId,
+                    soTranid: cdData.soTranid
+                });
+
+                // Get Sales Order details using existing helper
+                var soData = getSalesOrderDetails(cdData.soId);
+                if (!soData) {
+                    return { error: 'Sales Order not found for ID: ' + cdData.soId };
+                }
+
+                // Query system notes for this SO (all notes, no date filter)
+                var sql = `
+                    SELECT 
+                        sn.id,
+                        sn.date,
+                        sn.field,
+                        sn.oldvalue,
+                        sn.newvalue,
+                        sn.name,
+                        e.firstname || ' ' || e.lastname AS user_name
+                    FROM systemNote sn
+                    LEFT JOIN employee e ON sn.name = e.id
+                    WHERE sn.recordid = ` + cdData.soId + `
+                    ORDER BY sn.date DESC, sn.id DESC
+                `;
+
+                var systemNotesResults = query.runSuiteQL({ query: sql }).asMappedResults();
+                
+                log.debug('System Notes Query', {
+                    soId: cdData.soId,
+                    notesFound: systemNotesResults.length
+                });
+
+                // Format system notes for display
+                var formattedNotes = [];
+                for (var i = 0; i < systemNotesResults.length; i++) {
+                    var note = systemNotesResults[i];
+                    formattedNotes.push({
+                        date: note.date || '',
+                        field: note.field || '',
+                        oldValue: note.oldvalue || '',
+                        newValue: note.newvalue || '',
+                        setBy: note.user_name || 'System'
+                    });
+                }
+
+                return {
+                    soInfo: {
+                        soNumber: soData.tranid,
+                        soDate: soData.trandate,
+                        total: soData.foreigntotal,
+                        customerName: soData.customer_name,
+                        soId: cdData.soId
+                    },
+                    systemNotes: formattedNotes
+                };
+
+            } catch (e) {
+                log.error('Error in getSOLifecycleData', {
+                    error: e.message,
+                    stack: e.stack,
+                    creditMemoId: creditMemoId
+                });
+                return { error: e.message };
+            }
+        }
+
+        // ============================================================================
         // CROSS-SO DEPOSIT ANALYSIS FUNCTIONS
         // ============================================================================
 
@@ -3359,7 +3576,11 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                         inv_tl.createdfrom as invSourceSOId,
                         inv_so.tranid as invSourceSO,
                         inv.custbody_overpayment_tran as invOverpaymentCD,
-                        depa_tl.netamount as amount
+                        depa_tl.netamount as amount,
+                        -- Get the applied-to transaction (could be invoice, refund, etc)
+                        applied_tran.id as appliedTranId,
+                        applied_tran.tranid as appliedTranNumber,
+                        applied_tran.type as appliedTranType
                     FROM 
                         transaction depa
                         -- Link DEPA to CD via DepAppl linktype
@@ -3374,6 +3595,12 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                             AND cd_tl.mainline = 'T'
                         LEFT JOIN transaction cd_so 
                             ON cd_tl.createdfrom = cd_so.id
+                        -- Link DEPA to the applied-to transaction via Payment linktype
+                        LEFT JOIN previousTransactionLineLink ptll_applied 
+                            ON depa.id = ptll_applied.nextdoc 
+                            AND ptll_applied.linktype = 'Payment'
+                        LEFT JOIN transaction applied_tran 
+                            ON ptll_applied.previousdoc = applied_tran.id
                         -- Link DEPA to INV via Payment linktype (LEFT JOIN to include non-invoice applications)
                         LEFT JOIN previousTransactionLineLink ptll_inv 
                             ON depa.id = ptll_inv.nextdoc 
@@ -3433,8 +3660,8 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                     var status = 'match';
                     var isMismatch = false;
                     var isNoInvoice = false;
-                    // ONLY highlight if this invoice's custbody_overpayment_tran points to this CD AND it's the overpayment CD
-                    var isOverpaymentInv = (invOverpaymentCD === cdId && isOverpaymentCDTranId);
+                    // Highlight ALL overpayment invoices: any invoice where custbody_overpayment_tran points to this CD
+                    var isOverpaymentInv = (invOverpaymentCD === cdId);
                     
                     if (!invSourceSO) {
                         // No invoice (applied to refund or other non-invoice transaction)
@@ -3452,6 +3679,23 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                         matches++;
                     }
 
+                    // Get applied-to transaction info
+                    var appliedTranType = row.appliedtrantype || null;
+                    var appliedTranNumber = row.appliedtrannumber || null;
+                    var appliedTranId = row.appliedtranid || null;
+                    
+                    // Format transaction type for display
+                    var appliedTranTypeDisplay = '';
+                    if (appliedTranType === 'CustInvc') {
+                        appliedTranTypeDisplay = 'Invoice';
+                    } else if (appliedTranType === 'CustRfnd') {
+                        appliedTranTypeDisplay = 'Refund';
+                    } else if (appliedTranType === 'CustCred') {
+                        appliedTranTypeDisplay = 'Credit Memo';
+                    } else if (appliedTranType) {
+                        appliedTranTypeDisplay = appliedTranType;
+                    }
+
                     applications.push({
                         depaId: row.depaid,
                         depaTranId: row.depatranid,
@@ -3465,7 +3709,10 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                         status: status,
                         isMismatch: isMismatch,
                         isNoInvoice: isNoInvoice,
-                        isOverpaymentInv: isOverpaymentInv
+                        isOverpaymentInv: isOverpaymentInv,
+                        appliedTranType: appliedTranTypeDisplay,
+                        appliedTranNumber: appliedTranNumber,
+                        appliedTranId: appliedTranId
                     });
                 }
 
