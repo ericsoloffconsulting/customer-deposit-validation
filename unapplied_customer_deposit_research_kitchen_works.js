@@ -79,8 +79,25 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                     
                     var result = analyzeCreditMemoOverpayment(creditMemoId);
                     
-                    response.setHeader({ name: 'Content-Type', value: 'application/json' });
-                    response.write(JSON.stringify({ success: true, data: result }));
+                    try {
+                        var jsonString = JSON.stringify({ success: true, data: result });
+                        var sizeKB = (jsonString.length / 1024).toFixed(2);
+                        log.debug('Response Size', sizeKB + ' KB (' + jsonString.length + ' characters)');
+                        
+                        response.setHeader({ name: 'Content-Type', value: 'application/json' });
+                        response.write(jsonString);
+                    } catch (stringifyError) {
+                        log.error('JSON Stringify Error', {
+                            error: stringifyError.message,
+                            stack: stringifyError.stack,
+                            resultKeys: Object.keys(result)
+                        });
+                        response.setHeader({ name: 'Content-Type', value: 'application/json' });
+                        response.write(JSON.stringify({ 
+                            success: false, 
+                            error: 'Failed to serialize response: ' + stringifyError.message 
+                        }));
+                    }
                     return;
                 }
                 
@@ -1407,7 +1424,8 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
 
                 /* Comparison Transaction Links */
                 '.comparison-transactions { display: flex; gap: 15px; margin-bottom: 25px; flex-wrap: wrap; }' +
-                '.comparison-tran-link { display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: #fff; border: 1px solid #dee2e6; border-radius: 6px; text-decoration: none; color: #333; transition: all 0.2s; min-width: 140px; }' +
+                '.comparison-tran-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; }' +
+                '.comparison-tran-link { display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: #fff; border: 1px solid #dee2e6; border-radius: 6px; text-decoration: none; color: #333; transition: all 0.2s; min-width: 140px; flex: 0 0 auto; }' +
                 '.comparison-tran-link:hover { border-color: #1976d2; background: #e3f2fd; }' +
                 '.comparison-tran-label { font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: 0.3px; }' +
                 '.comparison-tran-value { font-size: 14px; font-weight: 600; color: #1976d2; }' +
@@ -1448,6 +1466,46 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '.status-error { background: #dc3545; color: white; }' +
                 '.status-warning { background: #ff9800; color: white; }' +
                 '.status-overpayment { background: #ffc107; color: #000; }' +
+                
+                /* Multi-SO Comparison Styling */
+                '.customer-analysis-header { background: #fff; border: 2px solid #1976d2; border-radius: 8px; padding: 20px; margin-bottom: 20px; }' +
+                '.customer-analysis-header h2 { margin: 0 0 10px 0; font-size: 20px; color: #1976d2; font-weight: 600; }' +
+                '.customer-analysis-header > div { color: #495057; font-size: 14px; margin-bottom: 15px; }' +
+                '.customer-overview-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-top: 15px; }' +
+                '.customer-overview-card { background: rgba(255, 255, 255, 0.15); padding: 12px; border-radius: 6px; backdrop-filter: blur(10px); }' +
+                '.customer-overview-label { font-size: 11px; opacity: 0.9; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px; }' +
+                '.customer-overview-value { font-size: 20px; font-weight: 700; }' +
+                '.customer-overview-sub { font-size: 12px; opacity: 0.85; margin-top: 4px; }' +
+                
+                '.summary-table-wrapper { background: white; border: 2px solid #e0e0e0; border-radius: 8px; padding: 15px; margin-bottom: 30px; }' +
+                '.summary-table-wrapper h3 { margin: 0 0 15px 0; font-size: 16px; color: #333; }' +
+                '.summary-table { width: 100%; border-collapse: collapse; font-size: 13px; }' +
+                '.summary-table thead th { background: #f8f9fa; padding: 10px; text-align: left; font-weight: 600; border-bottom: 2px solid #dee2e6; }' +
+                '.summary-table tbody td { padding: 10px; border-bottom: 1px solid #eee; }' +
+                '.summary-table tbody tr:hover { background: #f5f5f5; }' +
+                '.summary-table .amount { text-align: right; font-family: monospace; }' +
+                '.summary-table .status-icon { font-size: 16px; }' +
+                
+                '.so-section { margin-bottom: 40px; border: 2px solid #dee2e6; border-radius: 8px; padding: 20px; background: white; }' +
+                '.so-section.source-so { border-color: #9c27b0; border-width: 3px; background: rgba(156, 39, 176, 0.02); }' +
+                '.so-section.has-mismatch { border-color: #ff9800; border-width: 2px; background: rgba(255, 152, 0, 0.02); }' +
+                '.so-section.has-unbilled { border-color: #ffc107; border-width: 2px; background: rgba(255, 193, 7, 0.02); }' +
+                '.so-section.no-issues { border-color: #4caf50; background: rgba(76, 175, 80, 0.02); }' +
+                
+                '.so-section-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #e0e0e0; }' +
+                '.so-section-icon { font-size: 24px; }' +
+                '.so-section-title { flex: 1; }' +
+                '.so-section-title h3 { margin: 0; font-size: 18px; color: #333; }' +
+                '.so-section-title .so-status { font-size: 12px; color: #666; margin-top: 4px; }' +
+                '.so-section-badges { display: flex; gap: 8px; }' +
+                '.so-badge { padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; }' +
+                '.so-badge.source { background: #9c27b0; color: white; }' +
+                '.so-badge.mismatch { background: #ff9800; color: white; }' +
+                '.so-badge.unbilled { background: #ffc107; color: #000; }' +
+                '.so-badge.clean { background: #4caf50; color: white; }' +
+                
+                '.detailed-comparison-divider { margin: 40px 0; border-top: 3px dashed #dee2e6; position: relative; }' +
+                '.detailed-comparison-divider::after { content: "DETAILED COMPARISON RESULTS"; position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: white; padding: 0 15px; font-size: 11px; font-weight: 700; color: #666; letter-spacing: 1px; }' +
 
                 /* Conclusion Box */
                 '.comparison-conclusion { margin-top: 25px; padding: 15px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; }' +
@@ -2006,10 +2064,42 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    ' +
                 '    /* Populate Customer Information Section */' +
                 '    var customerInfo = document.getElementById("customerInfoSection");' +
+                '    ' +
+                '    /* Find all CMs for this customer from the table */' +
+                '    var customerCMs = [];' +
+                '    var totalCMAmount = 0;' +
+                '    var cmTable = document.getElementById("table-creditmemos");' +
+                '    if (cmTable) {' +
+                '        var rows = cmTable.querySelectorAll("tbody tr");' +
+                '        for (var i = 0; i < rows.length; i++) {' +
+                '            var cells = rows[i].querySelectorAll("td");' +
+                '            if (cells.length > 3) {' +
+                '                var rowCustomer = cells[3].textContent.trim();' +
+                '                if (rowCustomer === customerName) {' +
+                '                    var cmNum = cells[1].textContent.trim();' +
+                '                    var cmAmtText = cells[4].textContent.trim().replace("$", "").replace(",", "");' +
+                '                    var cmAmt = parseFloat(cmAmtText) || 0;' +
+                '                    customerCMs.push({ number: cmNum, amount: cmAmt });' +
+                '                    totalCMAmount += cmAmt;' +
+                '                }' +
+                '            }' +
+                '        }' +
+                '    }' +
+                '    ' +
                 '    var infoHtml = "<div style=\\"display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;\\\">";' +
                 '    infoHtml += "<div><strong style=\\"color:#495057;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;\\">Customer</strong><div style=\\"font-size:16px;font-weight:600;color:#212529;margin-top:4px;\\">" + customerName + "</div></div>";' +
-                '    infoHtml += "<div><strong style=\\"color:#495057;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;\\">Credit Memo</strong><div style=\\"font-size:16px;font-weight:600;color:#dc3545;margin-top:4px;\\">" + cmNumber + "</div></div>";' +
-                '    infoHtml += "<div><strong style=\\"color:#495057;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;\\">CM Amount</strong><div style=\\"font-size:16px;font-weight:600;color:#dc3545;margin-top:4px;\\">-" + formatCompCurrency(cmAmount) + "</div></div>";' +
+                '    ' +
+                '    /* Show combined total if multiple CMs */' +
+                '    if (customerCMs.length > 1) {' +
+                '        infoHtml += "<div><strong style=\\"color:#495057;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;\\">Combined Overpayments</strong><div style=\\"font-size:16px;font-weight:600;color:#dc3545;margin-top:4px;\\">-" + formatCompCurrency(totalCMAmount) + "</div></div>";' +
+                '    }' +
+                '    ' +
+                '    /* Show individual CMs */' +
+                '    for (var i = 0; i < customerCMs.length; i++) {' +
+                '        var cm = customerCMs[i];' +
+                '        var label = customerCMs.length > 1 ? "CM " + (i + 1) : "Credit Memo";' +
+                '        infoHtml += "<div><strong style=\\"color:#495057;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;\\">" + label + "</strong><div style=\\"font-size:16px;font-weight:600;color:#dc3545;margin-top:4px;\\">" + cm.number + " (-" + formatCompCurrency(cm.amount) + ")</div></div>";' +
+                '    }' +
                 '    if (linkedCD) {' +
                 '        infoHtml += "<div><strong style=\\"color:#495057;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;\\">CD #</strong><div style=\\"font-size:16px;font-weight:600;color:#28a745;margin-top:4px;\\">" + linkedCD + "</div></div>";' +
                 '    }' +
@@ -2087,21 +2177,60 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    ' +
                 '    fetch("' + scriptUrl + '", {' +
                 '        method: "POST",' +
-                '        headers: { "Content-Type": "application/json" },' +
+                '        headers: { ' +
+                '            "Content-Type": "application/json",' +
+                '            "X-Requested-With": "XMLHttpRequest"' +
+                '        },' +
+                '        credentials: "same-origin",' +
                 '        body: JSON.stringify({ action: "soInvoiceComparison", creditMemoId: currentCreditMemoId })' +
                 '    })' +
-                '    .then(function(response) { return response.json(); })' +
-                '    .then(function(result) {' +
-                '        if (result.success && result.data) {' +
-                '            renderTab1Result(result.data);' +
-                '            tab1Loaded = true;' +
-                '        } else {' +
-                '            body.innerHTML = "<div class=\\"error-msg\\">Error: " + (result.data && result.data.error ? result.data.error : "Unknown error") + "</div>";' +
+                '    .then(function(response) {' +
+                '        if (!response.ok) {' +
+                '            throw new Error("HTTP " + response.status + ": " + response.statusText);' +
+                '        }' +
+                '        return response.text();' +
+                '    })' +
+                '    .then(function(text) {' +
+                '        try {' +
+                '            var result = JSON.parse(text);' +
+                '            if (result.success && result.data) {' +
+                '                renderTab1Result(result.data);' +
+                '                tab1Loaded = true;' +
+                '            } else {' +
+                '                body.innerHTML = "<div class=\\"error-msg\\">Error: " + (result.data && result.data.error ? result.data.error : "Unknown error") + "</div>";' +
+                '            }' +
+                '        } catch (parseErr) {' +
+                '            console.error("JSON parse error:", parseErr);' +
+                '            console.log("Response text:", text.substring(0, 500));' +
+                '            body.innerHTML = "<div class=\\"error-msg\\">Invalid JSON response. Check browser console for details.</div>";' +
                 '        }' +
                 '    })' +
                 '    .catch(function(err) {' +
+                '        console.error("Fetch error:", err);' +
                 '        body.innerHTML = "<div class=\\"error-msg\\">Error loading comparison: " + err.message + "</div>";' +
                 '    });' +
+                '}' +
+                '' +
+                '/* Render SO details - reusable function */' +
+                'function renderSODetails(data) {' +
+                '    var html = "", totals = data.totals || {}, soData = data.salesOrder || {}, relatedCMs = data.relatedCreditMemos || [], totalCMAmount = data.totalCMAmount || 0;' +
+                '    html += "<div class=\\"comparison-transactions\\">";' +
+                '    if (relatedCMs.length > 1) { html += "<div class=\\"comparison-tran-link cm-aggregate\\"><div><div class=\\"comparison-tran-label\\">Credit Memos (" + relatedCMs.length + ")</div><div class=\\"comparison-tran-value\\">Combined</div><div class=\\"comparison-tran-amount\\">-" + formatCompCurrency(totalCMAmount) + "</div></div></div>"; for (var c = 0; c < relatedCMs.length; c++) { html += "<a href=\\"/app/accounting/transactions/custcred.nl?id=" + relatedCMs[c].id + "\\" target=\\"_blank\\" class=\\"comparison-tran-link cm-individual\\"><div><div class=\\"comparison-tran-label\\">CM " + (c+1) + "</div><div class=\\"comparison-tran-value\\">" + relatedCMs[c].tranid + "</div><div class=\\"comparison-tran-amount\\">-" + formatCompCurrency(relatedCMs[c].amount) + "</div></div></a>"; } } else if (relatedCMs.length === 1) { html += "<a href=\\"/app/accounting/transactions/custcred.nl?id=" + relatedCMs[0].id + "\\" target=\\"_blank\\" class=\\"comparison-tran-link\\"><div><div class=\\"comparison-tran-label\\">Credit Memo</div><div class=\\"comparison-tran-value\\">" + relatedCMs[0].tranid + "</div><div class=\\"comparison-tran-amount\\">-" + formatCompCurrency(relatedCMs[0].amount) + "</div></div></a>"; }' +
+                '    html += "<a href=\\"/app/accounting/transactions/salesord.nl?id=" + soData.id + "\\" target=\\"_blank\\" class=\\"comparison-tran-link\\"><div><div class=\\"comparison-tran-label\\">Sales Order</div><div class=\\"comparison-tran-value\\">" + (soData.tranid || "-") + "</div><div class=\\"comparison-tran-amount\\">" + formatCompCurrency(Math.abs(soData.foreigntotal || 0)) + "</div></div></a>";' +
+                '    var invoices = data.invoices || []; for (var i = 0; i < invoices.length; i++) { html += "<a href=\\"/app/accounting/transactions/custinvc.nl?id=" + invoices[i].id + "\\" target=\\"_blank\\" class=\\"comparison-tran-link\\"><div><div class=\\"comparison-tran-label\\">Invoice " + (i+1) + "</div><div class=\\"comparison-tran-value\\">" + invoices[i].tranid + "</div><div class=\\"comparison-tran-amount\\">" + formatCompCurrency(Math.abs(invoices[i].amount)) + "</div></div></a>"; }' +
+                '    html += "</div>"; var mismatchVar = totals.mismatchVariance || 0, unbilledVar = totals.unbilledVariance || 0; html += "<div class=\\"comparison-summary\\"><div class=\\"comparison-card\\"><div class=\\"comparison-card-label\\">SO Grand Total</div><div class=\\"comparison-card-value\\">" + formatCompCurrency(totals.soGrandTotal || 0) + "</div><div class=\\"comparison-card-sub\\">Lines: " + formatCompCurrency(totals.soLineTotal || 0) + " | Tax: " + formatCompCurrency(totals.soTaxTotal || 0) + "</div></div><div class=\\"comparison-card\\"><div class=\\"comparison-card-label\\">Invoice Grand Total</div><div class=\\"comparison-card-value\\">" + formatCompCurrency(totals.invoiceGrandTotal || 0) + "</div><div class=\\"comparison-card-sub\\">Lines: " + formatCompCurrency(totals.invoiceLineTotal || 0) + " | Tax: " + formatCompCurrency(totals.invoiceTaxTotal || 0) + "</div></div><div class=\\"comparison-card " + (Math.abs(mismatchVar) < 0.01 ? "success" : "error") + "\\"><div class=\\"comparison-card-label\\">Mismatch Variance</div><div class=\\"comparison-card-value\\">" + formatCompCurrencyWithSign(mismatchVar) + "</div><div class=\\"comparison-card-sub\\">Unbilled: " + formatCompCurrencyWithSign(unbilledVar) + "</div></div>";' +
+                '    if (relatedCMs.length > 0) { html += "<div class=\\"comparison-card " + (Math.abs(Math.abs(mismatchVar) - totalCMAmount) < 0.005 ? "success" : "warning") + "\\"><div class=\\"comparison-card-label\\">CM Total</div><div class=\\"comparison-card-value\\">" + formatCompCurrency(totalCMAmount) + "</div></div>"; }' +
+                '    html += "</div><div class=\\"comparison-conclusion " + (Math.abs(mismatchVar) < 0.01 ? "match" : "mismatch") + "\\">" + (data.conclusion || "") + "</div>"; var problemItems = data.problemItems || []; if (problemItems.length > 0) { html += "<div style=\\"margin-top:20px;padding:15px;background:#fff3e0;border:1px solid #f57c00;border-radius:6px;\\"><strong style=\\"color:#e65100;\\">\u26A0\uFE0F " + problemItems.length + " Problem Item(s):</strong><ul style=\\"margin:10px 0 0 20px;\\">"; for (var pi = 0; pi < problemItems.length; pi++) { html += "<li><strong>" + problemItems[pi].itemName + "</strong> - " + problemItems[pi].status + "</li>"; } html += "</ul></div>"; }' +
+                '    html += "<div class=\\"comparison-table-container\\"><table class=\\"comparison-table\\"><thead><tr><th>Item</th><th>Description</th><th>SO #</th><th class=\\"amount\\">SO Qty</th><th class=\\"amount\\">SO Rate</th><th class=\\"amount\\">SO Amount</th><th>Invoice(s)</th><th class=\\"amount\\">Inv Qty</th><th class=\\"amount\\">Inv Rate</th><th class=\\"amount\\">Inv Amount</th><th class=\\"amount\\">Mismatch</th><th class=\\"amount\\">Unbilled</th><th>Status</th></tr></thead><tbody>";' +
+                '    var compTable = data.comparisonTable || []; for (var i = 0; i < compTable.length; i++) { var row = compTable[i], statusClass = row.status === "Match" ? "match" : (row.status === "NOT INVOICED" ? "not-invoiced" : (row.status === "DISCOUNT" ? "discount" : "mismatch")); html += "<tr><td>" + (row.itemName || "-") + "</td><td>" + (row.lineDescription || "-") + "</td><td>" + (soData.tranid || "-") + "</td><td class=\\"amount\\">" + (row.soQty || 0) + "</td><td class=\\"amount\\">" + formatCompCurrencySigned(row.soRate || 0) + "</td><td class=\\"amount\\">" + formatCompCurrencySigned(row.soAmount || 0) + "</td><td>" + (row.invoiceNumbers || "-") + "</td><td class=\\"amount\\">" + (row.invoiceQty || 0) + "</td><td class=\\"amount\\">" + formatCompCurrencySigned(row.invoiceRate || 0) + "</td><td class=\\"amount\\">" + formatCompCurrencySigned(row.invoiceAmount || 0) + "</td><td class=\\"amount\\">" + formatCompCurrencyWithSign(row.mismatchVariance || 0) + "</td><td class=\\"amount\\">" + formatCompCurrencyWithSign(row.unbilledVariance || 0) + "</td><td class=\\"" + statusClass + "\\">" + row.status + "</td></tr>"; }' +
+                '    html += "<tr class=\\"comparison-totals\\"><td colspan=\\"5\\"><strong>TOTALS</strong></td><td class=\\"amount\\">" + formatCompCurrency(totals.soLineTotal || 0) + "</td><td></td><td></td><td></td><td class=\\"amount\\">" + formatCompCurrency(totals.invoiceLineTotal || 0) + "</td><td class=\\"amount\\">" + formatCompCurrencyWithSign(mismatchVar) + "</td><td class=\\"amount\\">" + formatCompCurrencyWithSign(unbilledVar) + "</td><td></td></tr></tbody></table></div>";' +
+                '    return html;' +
+                '}' +
+                '' +
+                '/* Original single-SO view */' +
+                'function renderOriginalSingleSOView(data) {' +
+                '    window.currentComparisonData = { mismatchVariance: data.totals ? data.totals.mismatchVariance : 0, unbilledVariance: data.totals ? data.totals.unbilledVariance : 0, totalVariance: data.totals ? data.totals.totalVariance : 0 };' +
+                '    return "<div style=\\"margin:0 0 20px;padding:15px;background:#e3f2fd;border-left:4px solid #1976d2;border-radius:4px;\\"><strong>What This Analysis Shows:</strong> Line-by-line SO vs Invoice comparison.</div>" + renderSODetails(data);' +
                 '}' +
                 '' +
                 '/* Load Tab 2: Cross-SO Analysis */' +
@@ -2386,35 +2515,183 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '' +
                 '/* Render Tab 1: SO↔INV Comparison Result */' +
                 'function renderTab1Result(data) {' +
+                '    console.log("renderTab1Result called with data:", data);' +
                 '    var body = document.getElementById("tab-content-1");' +
+                '    console.log("tab-content-1 element:", body);' +
+                '    ' +
+                '    if (!body) {' +
+                '        console.error("ERROR: tab-content-1 element not found!");' +
+                '        alert("Modal element not found. Please refresh and try again.");' +
+                '        return;' +
+                '    }' +
                 '    ' +
                 '    if (data.error) {' +
                 '        body.innerHTML = "<div class=\\"error-msg\\"><strong>Error:</strong> " + data.error + "</div>";' +
                 '        return;' +
                 '    }' +
                 '    ' +
-                '    /* Store comparison data globally for AI analysis */' +
-                '    window.currentComparisonData = {' +
-                '        mismatchVariance: data.totals ? data.totals.mismatchVariance : 0,' +
-                '        unbilledVariance: data.totals ? data.totals.unbilledVariance : 0,' +
-                '        totalVariance: data.totals ? data.totals.totalVariance : 0' +
-                '    };' +
-                '    ' +
                 '    var html = "";' +
                 '    ' +
-                '    /* Helper Text */' +
-                '    html += "<div style=\\"margin:0 0 20px;padding:15px;background:#e3f2fd;border-left:4px solid #1976d2;border-radius:4px;\\">";' +
-                '    html += "<strong>What This Analysis Shows:</strong> This comparison examines line-by-line differences between the Sales Order and Invoices. ";' +
-                '    html += "A mismatch variance indicates items were billed at incorrect amounts or the sales order was changed after invoicing. ";' +
-                '    html += "These discrepancies prevent customer deposits from being correctly utilized and applied, potentially causing overpayments.";' +
+                '    /* Check if we have multi-SO data */' +
+                '    var hasMultiSOData = data.soComparisons && data.soComparisons.length > 0;' +
+                '    ' +
+                '    if (hasMultiSOData) {' +
+                '        /* NEW MULTI-SO VIEW */' +
+                '        var customerTotals = data.customerTotals || {};' +
+                '        var soComparisons = data.soComparisons || [];' +
+                '        ' +
+                '        /* Summary Table */' +
+                '        html += "<div class=\\"summary-table-wrapper\\">";' +
+                '        html += "<h3>\u{1F4CA} SUMMARY TABLE - All Sales Orders at a Glance</h3>";' +
+                '        html += "<table class=\\"summary-table\\">";' +
+                '        html += "<thead><tr>";' +
+                '        html += "<th>SO Number</th>";' +
+                '        html += "<th>Status</th>";' +
+                '        html += "<th class=\\"amount\\">Mismatch</th>";' +
+                '        html += "<th class=\\"amount\\">Unbilled</th>";' +
+                '        html += "<th class=\\"amount\\">Total Variance</th>";' +
+                '        html += "<th>Status</th>";' +
+                '        html += "</tr></thead><tbody>";' +
+                '        ' +
+                '        for (var sumIdx = 0; sumIdx < soComparisons.length; sumIdx++) {' +
+                '            var sumComp = soComparisons[sumIdx];' +
+                '            if (sumComp.error) continue;' +
+                '            ' +
+                '            var sumTotals = sumComp.totals || {};' +
+                '            var sumMismatch = sumTotals.mismatchVariance || 0;' +
+                '            var sumUnbilled = sumTotals.unbilledVariance || 0;' +
+                '            var sumTotal = sumMismatch + sumUnbilled;' +
+                '            var sumSO = sumComp.salesOrder || {};' +
+                '            ' +
+                '            var sumStatusIcon = "";' +
+                '            var sumStatusText = "";' +
+                '            if (Math.abs(sumMismatch) > 0.01) {' +
+                '                sumStatusIcon = "\u26A0\uFE0F";' +
+                '                sumStatusText = "HAS MISMATCH";' +
+                '            } else if (Math.abs(sumUnbilled) > 0.01) {' +
+                '                sumStatusIcon = "\u{1F4CB}";' +
+                '                sumStatusText = "HAS UNBILLED";' +
+                '            } else {' +
+                '                sumStatusIcon = "\u2705";' +
+                '                sumStatusText = "NO ISSUES";' +
+                '            }' +
+                '            ' +
+                '            var sumSourceMarker = sumComp.isSource ? " \u2B50" : "";' +
+                '            ' +
+                '            html += "<tr>";' +
+                '            html += "<td><strong>" + (sumSO.tranid || "-") + sumSourceMarker + "</strong></td>";' +
+                '            html += "<td>" + (sumComp.statusDisplay || sumComp.status || "-") + "</td>";' +
+                '            html += "<td class=\\"amount\\">" + formatCompCurrencyWithSign(sumMismatch) + "</td>";' +
+                '            html += "<td class=\\"amount\\">" + formatCompCurrencyWithSign(sumUnbilled) + "</td>";' +
+                '            html += "<td class=\\"amount\\">" + formatCompCurrencyWithSign(sumTotal) + "</td>";' +
+                '            html += "<td><span class=\\"status-icon\\">" + sumStatusIcon + "</span> " + sumStatusText + "</td>";' +
+                '            html += "</tr>";' +
+                '        }' +
+                '        ' +
+                '        /* Add totals row */' +
+                '        html += "<tr style=\\"font-weight:bold;background:#f8f9fa;border-top:2px solid #dee2e6;\\">";' +
+                '        html += "<td colspan=\\"2\\">TOTALS</td>";' +
+                '        html += "<td class=\\"amount\\">" + formatCompCurrencyWithSign(customerTotals.totalMismatchVariance) + "</td>";' +
+                '        html += "<td class=\\"amount\\">" + formatCompCurrencyWithSign(customerTotals.totalUnbilledVariance) + "</td>";' +
+                '        html += "<td class=\\"amount\\">" + formatCompCurrencyWithSign(customerTotals.grandTotalVariance) + "</td>";' +
+                '        html += "<td></td>";' +
+                '        html += "</tr>";' +
+                '        ' +
+                '        html += "</tbody></table></div>";' +
+                '        ' +
+                '        /* Detailed Comparison Divider */' +
+                '        html += "<div class=\\"detailed-comparison-divider\\"></div>";' +
+                '        ' +
+                '        /* Render each SO section */' +
+                '        for (var soIdx = 0; soIdx < soComparisons.length; soIdx++) {' +
+                '            var comp = soComparisons[soIdx];' +
+                '            if (comp.error) {' +
+                '                html += "<div class=\\"so-section\\"><div class=\\"error-msg\\">Error loading SO: " + comp.error + "</div></div>";' +
+                '                continue;' +
+                '            }' +
+                '            ' +
+                '            html += renderSOSection(comp, soIdx);' +
+                '        }' +
+                '        ' +
+                '    } else {' +
+                '        /* FALLBACK: Original single-SO view (for backward compatibility) */' +
+                '        html += renderOriginalSingleSOView(data);' +
+                '    }' +
+                '    ' +
+                '    console.log("About to set body.innerHTML, html length:", html.length);' +
+                '    body.innerHTML = html;' +
+                '    console.log("Successfully set body.innerHTML");' +
+                '}' +
+                '' +
+                '/* Render individual SO section */' +
+                'function renderSOSection(comp, index) {' +
+                '    var html = "";' +
+                '    var totals = comp.totals || {};' +
+                '    var soData = comp.salesOrder || {};' +
+                '    var mismatchVar = totals.mismatchVariance || 0;' +
+                '    var unbilledVar = totals.unbilledVariance || 0;' +
+                '    ' +
+                '    /* Determine section class */' +
+                '    var sectionClass = "so-section";' +
+                '    if (comp.isSource) {' +
+                '        sectionClass += " source-so";' +
+                '    } else if (Math.abs(mismatchVar) > 0.01) {' +
+                '        sectionClass += " has-mismatch";' +
+                '    } else if (Math.abs(unbilledVar) > 0.01) {' +
+                '        sectionClass += " has-unbilled";' +
+                '    } else {' +
+                '        sectionClass += " no-issues";' +
+                '    }' +
+                '    ' +
+                '    /* Section header */' +
+                '    html += "<div class=\\"" + sectionClass + "\\">";' +
+                '    html += "<div class=\\"so-section-header\\">";' +
+                '    ' +
+                '    /* Icon */' +
+                '    var icon = comp.isSource ? "\u2B50" : (Math.abs(mismatchVar) > 0.01 ? "\u26A0\uFE0F" : (Math.abs(unbilledVar) > 0.01 ? "\u{1F4CB}" : "\u2705"));' +
+                '    html += "<div class=\\"so-section-icon\\">" + icon + "</div>";' +
+                '    ' +
+                '    /* Title */' +
+                '    html += "<div class=\\"so-section-title\\">";' +
+                '    var titlePrefix = comp.isSource ? "SOURCE SALES ORDER: " : "SALES ORDER: ";' +
+                '    html += "<h3>" + titlePrefix + (soData.tranid || "-") + "</h3>";' +
+                '    html += "<div class=\\"so-status\\">" + (comp.statusDisplay || comp.status || "-") + "</div>";' +
                 '    html += "</div>";' +
                 '    ' +
-                '    /* Transaction Links with Amounts */' +
-                '    html += "<div class=\\"comparison-transactions\\">";' +
+                '    /* Badges */' +
+                '    html += "<div class=\\"so-section-badges\\">";' +
+                '    if (comp.isSource) {' +
+                '        html += "<span class=\\"so-badge source\\">SOURCE</span>";' +
+                '    }' +
+                '    if (Math.abs(mismatchVar) > 0.01) {' +
+                '        html += "<span class=\\"so-badge mismatch\\">MISMATCH: " + formatCompCurrency(Math.abs(mismatchVar)) + "</span>";' +
+                '    }' +
+                '    if (Math.abs(unbilledVar) > 0.01) {' +
+                '        html += "<span class=\\"so-badge unbilled\\">UNBILLED: " + formatCompCurrency(Math.abs(unbilledVar)) + "</span>";' +
+                '    }' +
+                '    if (Math.abs(mismatchVar) < 0.01 && Math.abs(unbilledVar) < 0.01) {' +
+                '        html += "<span class=\\"so-badge clean\\">\u2705 NO ISSUES</span>";' +
+                '    }' +
+                '    html += "</div>";' +
+                '    html += "</div>";' +
                 '    ' +
-                '    /* Show ALL related Credit Memos collectively */' +
-                '    var allCMs = data.allRelatedCreditMemos || (data.creditMemo ? [data.creditMemo] : []);' +
-                '    var totalCMAmount = data.totalCMAmount || (data.creditMemo ? data.creditMemo.amount : 0);' +
+                '    /* Use original rendering logic for the details */' +
+                '    html += renderSODetails(comp);' +
+                '    ' +
+                '    html += "</div>";' +
+                '    return html;' +
+                '}' +
+                '' +
+                '/* Render SO comparison details (reusable) */' +
+                'function renderSODetails(data) {' +
+                '    var html = "";' +
+                '    ' +
+                '    /* Transaction Links Container */' +
+                '    html += "<div class=\\"comparison-tran-grid\\">"' + ';' +
+                '    ' +
+                '    var totals = data.totals || {};' +
+                '    var allCMs = data.relatedCreditMemos || [];' +
+                '    var totalCMAmount = data.totalCMAmount || 0;' +
                 '    if (allCMs.length > 1) {' +
                 '        /* Multiple CMs - show aggregate card first */' +
                 '        html += "<div class=\\"comparison-tran-link cm-aggregate\\">";' +
@@ -2433,25 +2710,6 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '        html += "<a href=\\"/app/accounting/transactions/custcred.nl?id=" + singleCM.id + "\\" target=\\"_blank\\" class=\\"comparison-tran-link\\">";' +
                 '        html += "<div><div class=\\"comparison-tran-label\\">Credit Memo</div><div class=\\"comparison-tran-value\\">" + singleCM.tranid + "</div><div class=\\"comparison-tran-amount\\">-" + formatCompCurrency(singleCM.amount) + "</div></div>";' +
                 '        html += "</a>";' +
-                '    }' +
-                '    ' +
-                '    if (data.customerDeposit) {' +
-                '        html += "<a href=\\"/app/accounting/transactions/custdep.nl?id=" + data.customerDeposit.id + "\\" target=\\"_blank\\" class=\\"comparison-tran-link\\">";' +
-                '        html += "<div><div class=\\"comparison-tran-label\\">Customer Deposit</div><div class=\\"comparison-tran-value\\">" + data.customerDeposit.tranid + "</div><div class=\\"comparison-tran-amount\\">" + formatCompCurrency(Math.abs(data.customerDeposit.amount)) + "</div></div>";' +
-                '        html += "</a>";' +
-                '    }' +
-                '    if (data.salesOrder) {' +
-                '        html += "<a href=\\"/app/accounting/transactions/salesord.nl?id=" + data.salesOrder.id + "\\" target=\\"_blank\\" class=\\"comparison-tran-link\\">";' +
-                '        html += "<div><div class=\\"comparison-tran-label\\">Sales Order (" + data.salesOrder.statusText + ")</div><div class=\\"comparison-tran-value\\">" + data.salesOrder.tranid + "</div><div class=\\"comparison-tran-amount\\">" + formatCompCurrency(Math.abs(data.salesOrder.amount)) + "</div></div>";' +
-                '        html += "</a>";' +
-                '    }' +
-                '    if (data.invoices && data.invoices.length > 0) {' +
-                '        for (var i = 0; i < data.invoices.length; i++) {' +
-                '            var inv = data.invoices[i];' +
-                '            html += "<a href=\\"/app/accounting/transactions/custinvc.nl?id=" + inv.id + "\\" target=\\"_blank\\" class=\\"comparison-tran-link\\">";' +
-                '            html += "<div><div class=\\"comparison-tran-label\\">Invoice " + (i+1) + "</div><div class=\\"comparison-tran-value\\">" + inv.tranid + "</div><div class=\\"comparison-tran-amount\\">" + formatCompCurrency(Math.abs(inv.amount)) + "</div></div>";' +
-                '            html += "</a>";' +
-                '        }' +
                 '    }' +
                 '    html += "</div>";' +
                 '    ' +
@@ -2568,11 +2826,31 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '        html += "<tr>";' +
                 '        html += "<td>" + (row.itemName || "-") + "</td>";' +
                 '        html += "<td>" + (row.lineDescription || "-") + "</td>";' +
-                '        html += "<td>" + soTranid + "</td>";' +
+                '        html += "<td><a href=\\"/app/accounting/transactions/salesord.nl?id=" + data.salesOrder.id + "\\" target=\\"_blank\\" style=\\"color:#1976d2;text-decoration:none;\\">" + soTranid + "</a></td>";' +
                 '        html += "<td class=\\"amount\\">" + soQty + "</td>";' +
                 '        html += "<td class=\\"amount\\">" + formatCompCurrencySigned(soRate) + "</td>";' +
                 '        html += "<td class=\\"amount\\">" + formatCompCurrencySigned(soAmt) + "</td>";' +
-                '        html += "<td>" + (row.invoiceNumbers || "-") + "</td>";' +
+                '        var invDisplay = (row.invoiceNumbers || "-");' +
+                '        if (data.invoices && data.invoices.length > 0 && invDisplay !== "-") {' +
+                '            /* Match specific invoices for this line item */' +
+                '            var invNumbers = invDisplay.split(",").map(function(s) { return s.trim(); });' +
+                '            var invLinks = invNumbers.map(function(invNum) {' +
+                '                var matchedInv = null;' +
+                '                for (var j = 0; j < data.invoices.length; j++) {' +
+                '                    if (data.invoices[j].tranid === invNum) {' +
+                '                        matchedInv = data.invoices[j];' +
+                '                        break;' +
+                '                    }' +
+                '                }' +
+                '                if (matchedInv) {' +
+                '                    return "<a href=\\"/app/accounting/transactions/custinvc.nl?id=" + matchedInv.id + "\\" target=\\"_blank\\" style=\\"color:#1976d2;text-decoration:none;\\">" + invNum + "</a>";' +
+                '                }' +
+                '                return invNum;' +
+                '            }).join(", ");' +
+                '            html += "<td>" + invLinks + "</td>";' +
+                '        } else {' +
+                '            html += "<td>" + invDisplay + "</td>";' +
+                '        }' +
                 '        html += "<td class=\\"amount\\">" + invQty + "</td>";' +
                 '        html += "<td class=\\"amount\\">" + formatCompCurrencySigned(invRate) + "</td>";' +
                 '        html += "<td class=\\"amount\\">" + formatCompCurrencySigned(invAmt) + "</td>";' +
@@ -2597,7 +2875,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    ' +
                 '    html += "</tbody></table></div>";' +
                 '    ' +
-                '    body.innerHTML = html;' +
+                '    return html;' +
                 '}' +
                 '' +
                 '/* Render Tab 2: Cross-SO Analysis Result (rename from renderCrossSOResult) */' +
@@ -3844,77 +4122,67 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                     };
                 }
 
-                // STEP 4: Get SO details
+                // STEP 4: Get customer ID from SO to query all customer SOs
                 var soData = getSalesOrderDetails(soId);
                 log.debug('SO Data', JSON.stringify(soData));
-
-                // STEP 5: Get SO line items
-                var soLineItems = getSOLineItems(soId);
-                var soTaxTotal = getSOTaxTotal(soId);
-                log.debug('SO Lines', 'Count: ' + soLineItems.length + ', Tax: ' + soTaxTotal);
-
-                // STEP 6: Find all invoices from SO
-                var invoiceIds = findInvoicesFromSO(soId);
-                log.debug('Invoice IDs', JSON.stringify(invoiceIds));
-
-                // STEP 7: Get all invoice line items
-                var invoiceLineItems = [];
-                var invoiceTaxTotal = 0;
-                var invoiceDetails = [];
-
-                if (invoiceIds.length > 0) {
-                    invoiceLineItems = getInvoiceLineItems(invoiceIds);
-                    invoiceTaxTotal = getInvoiceTaxTotal(invoiceIds);
-                    invoiceDetails = getInvoiceDetails(invoiceIds);
-                }
-                log.debug('Invoice Lines', 'Count: ' + invoiceLineItems.length + ', Tax: ' + invoiceTaxTotal);
-
-                // STEP 8: Match and compare
-                var comparisonTable = matchLineItems(soLineItems, invoiceLineItems);
-
-                // STEP 9: Calculate totals
-                var totals = calculateTotals(comparisonTable, soTaxTotal, invoiceTaxTotal);
-
-                // STEP 10: Identify problems
-                var problemItems = identifyProblemItems(comparisonTable);
-
-                // STEP 10.5: Find ALL related Credit Memos from this SO
-                var allRelatedCMs = findAllRelatedCreditMemos(soId);
-                log.debug('Related CMs', 'Found ' + allRelatedCMs.length + ' Credit Memos related to SO ' + soData.tranid);
                 
-                // Calculate total CM amount for comparison to variance
-                var totalCMAmount = 0;
-                for (var cmIdx = 0; cmIdx < allRelatedCMs.length; cmIdx++) {
-                    totalCMAmount += allRelatedCMs[cmIdx].amount;
-                }
-                log.debug('Total CM Amount', totalCMAmount);
+                var customerId = soData.customerId;
+                log.debug('Customer ID', customerId);
 
-                // STEP 11: Build result object
-                var varianceMatchesCMs = Math.abs(Math.abs(totals.mismatchVariance) - totalCMAmount) < 0.005; // Exact match only
-                var conclusion = '';
-                if (Math.abs(totals.mismatchVariance) < 0.01) {
-                    conclusion = 'NO SO vs Invoice MISMATCH - overpayment from other source';
-                } else if (varianceMatchesCMs && allRelatedCMs.length > 0) {
-                    conclusion = 'SO vs Invoice MISMATCH of ' + Math.abs(totals.mismatchVariance).toFixed(2) + ' MATCHES the ' + allRelatedCMs.length + ' Credit Memo(s) totaling ' + totalCMAmount.toFixed(2) + ' - this variance caused the overpayment(s)';
-                } else {
-                    conclusion = 'SO vs Invoice MISMATCH found - this may have caused overpayment';
+                // STEP 5: Get ALL Sales Orders for this customer (filtered by status)
+                var allCustomerSOs = getCustomerSalesOrders(customerId, soId);
+                log.debug('Customer SOs', 'Found ' + allCustomerSOs.length + ' sales orders for customer');
+
+                // STEP 6: Run comparison for each SO
+                var soComparisons = [];
+                for (var soIdx = 0; soIdx < allCustomerSOs.length; soIdx++) {
+                    var currentSO = allCustomerSOs[soIdx];
+                    log.debug('Processing SO', 'ID: ' + currentSO.id + ', tranid: ' + currentSO.tranid);
+                    
+                    var soComparison = runSingleSOComparison(currentSO.id);
+                    soComparison.isSource = currentSO.isSource;
+                    soComparison.status = currentSO.status;
+                    soComparison.statusDisplay = currentSO.statusDisplay;
+                    soComparisons.push(soComparison);
                 }
 
+                // STEP 7: Calculate customer-level totals
+                var customerTotals = calculateCustomerTotals(soComparisons);
+                log.debug('Customer Totals', JSON.stringify(customerTotals));
+
+                // STEP 8: Find the source SO comparison for backward compatibility
+                var sourceSoComparison = null;
+                for (var i = 0; i < soComparisons.length; i++) {
+                    if (soComparisons[i].isSource) {
+                        sourceSoComparison = soComparisons[i];
+                        break;
+                    }
+                }
+
+                // STEP 9: Build result object (maintains backward compatibility + new multi-SO data)
                 var result = {
+                    // Original single-SO fields (for backward compatibility)
                     creditMemo: cmData,
-                    allRelatedCreditMemos: allRelatedCMs,
-                    totalCMAmount: totalCMAmount,
                     customerDeposit: cdData,
-                    salesOrder: soData,
-                    invoices: invoiceDetails,
-                    comparisonTable: comparisonTable,
-                    totals: totals,
-                    problemItems: problemItems,
-                    varianceMatchesCMs: varianceMatchesCMs,
-                    conclusion: conclusion
+                    salesOrder: sourceSoComparison ? sourceSoComparison.salesOrder : soData,
+                    invoices: sourceSoComparison ? sourceSoComparison.invoices : [],
+                    comparisonTable: sourceSoComparison ? sourceSoComparison.comparisonTable : [],
+                    totals: sourceSoComparison ? sourceSoComparison.totals : {},
+                    problemItems: sourceSoComparison ? sourceSoComparison.problemItems : [],
+                    allRelatedCreditMemos: sourceSoComparison ? sourceSoComparison.relatedCreditMemos : [],
+                    totalCMAmount: sourceSoComparison ? sourceSoComparison.totalCMAmount : 0,
+                    varianceMatchesCMs: sourceSoComparison ? sourceSoComparison.varianceMatchesCMs : false,
+                    conclusion: sourceSoComparison ? sourceSoComparison.conclusion : '',
+                    
+                    // NEW: Multi-SO data
+                    customerId: customerId,
+                    customerName: soData.customer_name,
+                    allSalesOrders: allCustomerSOs,
+                    soComparisons: soComparisons,
+                    customerTotals: customerTotals
                 };
 
-                log.debug('Analysis Complete', 'Variance: ' + totals.totalVariance);
+                log.debug('Analysis Complete', 'Total SOs: ' + allCustomerSOs.length);
                 return result;
 
             } catch (e) {
@@ -4994,6 +5262,183 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
             }
 
             return creditMemos;
+        }
+
+        /**
+         * Gets all Sales Orders for a customer filtered by status
+         * @param {number} customerId - Customer internal ID
+         * @param {number} sourceSoId - Source SO ID to mark as primary
+         * @returns {Array} Array of SO objects with basic info
+         */
+        function getCustomerSalesOrders(customerId, sourceSoId) {
+            // Query all SOs for customer with status D, E, F, G, H
+            // Status D = Partially Fulfilled
+            // Status E = Pending Billing/Partially Fulfilled
+            // Status F = Pending Billing
+            // Status G = Billed
+            // Status H = Closed
+            var sql = 
+                'SELECT t.id, ' +
+                '       t.tranid, ' +
+                '       t.status, ' +
+                '       BUILTIN.DF(t.status) as status_display, ' +
+                '       t.trandate, ' +
+                '       t.foreigntotal as total ' +
+                'FROM transaction t ' +
+                'WHERE t.entity = ' + customerId + ' ' +
+                '  AND t.type = \'SalesOrd\' ' +
+                '  AND t.status IN (\'SalesOrd:D\', \'SalesOrd:E\', \'SalesOrd:F\', \'SalesOrd:G\', \'SalesOrd:H\') ' +
+                'ORDER BY ' +
+                '  CASE ' +
+                '    WHEN t.id = ' + sourceSoId + ' THEN 0 ' +
+                '    WHEN t.status IN (\'SalesOrd:E\', \'SalesOrd:F\') THEN 1 ' +
+                '    WHEN t.status = \'SalesOrd:D\' THEN 2 ' +
+                '    WHEN t.status = \'SalesOrd:G\' THEN 3 ' +
+                '    WHEN t.status = \'SalesOrd:H\' THEN 4 ' +
+                '  END, ' +
+                '  t.trandate DESC';
+
+            var results = query.runSuiteQL({ query: sql }).asMappedResults();
+            var salesOrders = [];
+
+            for (var i = 0; i < results.length; i++) {
+                var row = results[i];
+                salesOrders.push({
+                    id: row.id,
+                    tranid: row.tranid,
+                    status: row.status,
+                    statusDisplay: row.status_display || '',
+                    trandate: row.trandate,
+                    total: parseFloat(row.total) || 0,
+                    isSource: (row.id == sourceSoId)
+                });
+            }
+
+            return salesOrders;
+        }
+
+        /**
+         * Runs SO-Invoice comparison for a single SO
+         * (Reusable version of the original analysis logic)
+         * @param {number} soId - Sales Order internal ID
+         * @returns {Object} Comparison result for this SO
+         */
+        function runSingleSOComparison(soId) {
+            try {
+                // Get SO details
+                var soData = getSalesOrderDetails(soId);
+                if (!soData) {
+                    return { error: 'Sales Order not found', soId: soId };
+                }
+
+                // Get SO line items
+                var soLineItems = getSOLineItems(soId);
+                var soTaxTotal = getSOTaxTotal(soId);
+
+                // Find all invoices from SO
+                var invoiceIds = findInvoicesFromSO(soId);
+
+                // Get all invoice line items
+                var invoiceLineItems = [];
+                var invoiceTaxTotal = 0;
+                var invoiceDetails = [];
+
+                if (invoiceIds.length > 0) {
+                    invoiceLineItems = getInvoiceLineItems(invoiceIds);
+                    invoiceTaxTotal = getInvoiceTaxTotal(invoiceIds);
+                    invoiceDetails = getInvoiceDetails(invoiceIds);
+                }
+
+                // Match and compare
+                var comparisonTable = matchLineItems(soLineItems, invoiceLineItems);
+
+                // Calculate totals
+                var totals = calculateTotals(comparisonTable, soTaxTotal, invoiceTaxTotal);
+
+                // Identify problems
+                var problemItems = identifyProblemItems(comparisonTable);
+
+                // Find related CMs for this SO
+                var relatedCMs = findAllRelatedCreditMemos(soId);
+                var totalCMAmount = 0;
+                for (var i = 0; i < relatedCMs.length; i++) {
+                    totalCMAmount += relatedCMs[i].amount;
+                }
+
+                // Build conclusion
+                var varianceMatchesCMs = Math.abs(Math.abs(totals.mismatchVariance) - totalCMAmount) < 0.005;
+                var conclusion = '';
+                if (Math.abs(totals.mismatchVariance) < 0.01) {
+                    conclusion = 'No Mismatch Detected';
+                } else if (varianceMatchesCMs && relatedCMs.length > 0) {
+                    conclusion = 'Mismatch of ' + Math.abs(totals.mismatchVariance).toFixed(2) + ' Matches ' + relatedCMs.length + ' CM(s) Totaling ' + totalCMAmount.toFixed(2);
+                } else {
+                    conclusion = 'Mismatch Found - May Have Caused Overpayment';
+                }
+
+                return {
+                    salesOrder: soData,
+                    invoices: invoiceDetails,
+                    comparisonTable: comparisonTable,
+                    totals: totals,
+                    problemItems: problemItems,
+                    relatedCreditMemos: relatedCMs,
+                    totalCMAmount: totalCMAmount,
+                    varianceMatchesCMs: varianceMatchesCMs,
+                    conclusion: conclusion
+                };
+
+            } catch (e) {
+                log.error('Error in runSingleSOComparison', {
+                    error: e.message,
+                    stack: e.stack,
+                    soId: soId
+                });
+                return { error: e.message, soId: soId };
+            }
+        }
+
+        /**
+         * Calculates customer-level totals across all SO comparisons
+         * @param {Array} soComparisons - Array of SO comparison results
+         * @returns {Object} Customer-level totals
+         */
+        function calculateCustomerTotals(soComparisons) {
+            var customerTotals = {
+                totalSOs: soComparisons.length,
+                sosWithMismatch: 0,
+                sosWithUnbilled: 0,
+                sosWithNoIssues: 0,
+                totalMismatchVariance: 0,
+                totalUnbilledVariance: 0,
+                grandTotalVariance: 0
+            };
+
+            for (var i = 0; i < soComparisons.length; i++) {
+                var comp = soComparisons[i];
+                if (comp.error) continue; // Skip errored SOs
+
+                var totals = comp.totals || {};
+                var mismatch = totals.mismatchVariance || 0;
+                var unbilled = totals.unbilledVariance || 0;
+
+                customerTotals.totalMismatchVariance += mismatch;
+                customerTotals.totalUnbilledVariance += unbilled;
+
+                if (Math.abs(mismatch) > 0.01) {
+                    customerTotals.sosWithMismatch++;
+                }
+                if (Math.abs(unbilled) > 0.01) {
+                    customerTotals.sosWithUnbilled++;
+                }
+                if (Math.abs(mismatch) < 0.01 && Math.abs(unbilled) < 0.01) {
+                    customerTotals.sosWithNoIssues++;
+                }
+            }
+
+            customerTotals.grandTotalVariance = customerTotals.totalMismatchVariance + customerTotals.totalUnbilledVariance;
+
+            return customerTotals;
         }
 
         /**
