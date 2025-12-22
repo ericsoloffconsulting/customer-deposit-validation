@@ -96,6 +96,30 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                     return;
                 }
                 
+                // Handle Overpayment Summary requests
+                if (body.action === 'overpaymentSummary') {
+                    var creditMemoId = body.creditMemoId;
+                    log.debug('Overpayment Summary Request', 'CM ID: ' + creditMemoId);
+                    
+                    var result = getOverpaymentSummary(creditMemoId);
+                    
+                    response.setHeader({ name: 'Content-Type', value: 'application/json' });
+                    response.write(JSON.stringify({ success: true, data: result }));
+                    return;
+                }
+                
+                // Handle Sales Order Totals requests
+                if (body.action === 'salesOrderTotals') {
+                    var creditMemoId = body.creditMemoId;
+                    log.debug('Sales Order Totals Request', 'CM ID: ' + creditMemoId);
+                    
+                    var result = getCustomerSalesOrdersSummary(creditMemoId);
+                    
+                    response.setHeader({ name: 'Content-Type', value: 'application/json' });
+                    response.write(JSON.stringify({ success: true, data: result }));
+                    return;
+                }
+                
                 // Handle deposit update requests
                 var depositId = body.depositId;
                 var nextStep = body.nextStep;
@@ -316,17 +340,17 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
             html += '<span class="comparison-modal-close" onclick="hideExplainModal()">&times;</span>';
             html += '</div>';
             
-            // AI Analysis button at top
-            html += '<div class="ai-button-container">';
-            html += '<button type="button" class="ai-analysis-trigger-btn" onclick="triggerAIAnalysis()" id="aiAnalysisButton">';
-            html += '<span class="ai-icon">🤖</span> AI Analysis with SO Lifecycle</button>';
+            // Customer Information Section (populated by JavaScript)
+            html += '<div id="customerInfoSection" class="customer-info-section" style="padding:15px;background:#f8f9fa;border-bottom:2px solid #dee2e6;display:none;">';
             html += '</div>';
             
             // Tab navigation
             html += '<div class="tab-navigation">';
             html += '<button type="button" class="tab-button active" onclick="switchExplainTab(1)" id="tab-btn-1">SO↔INV Comparison</button>';
             html += '<button type="button" class="tab-button" onclick="switchExplainTab(2)" id="tab-btn-2">CD Cross-SO Analysis</button>';
-            html += '<button type="button" class="tab-button" onclick="switchExplainTab(3)" id="tab-btn-3" style="display:none;">AI Analysis</button>';
+            html += '<button type="button" class="tab-button" onclick="switchExplainTab(3)" id="tab-btn-3">Overpayment Summary</button>';
+            html += '<button type="button" class="tab-button" onclick="switchExplainTab(4)" id="tab-btn-4">AI Generated SO Price Changes</button>';
+            html += '<button type="button" class="tab-button" onclick="switchExplainTab(5)" id="tab-btn-5">Sales Order Totals (All)</button>';
             html += '</div>';
             
             // Tab content containers
@@ -342,9 +366,19 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
             html += '<div class="comparison-loading">Loading Cross-SO analysis...</div>';
             html += '</div>';
             
-            // Tab 3: AI Analysis (initially hidden)
+            // Tab 3: Overpayment Summary
             html += '<div id="tab-content-3" class="tab-content">';
-            html += '<div class="comparison-loading">Click the AI Analysis button above to begin...</div>';
+            html += '<div class="comparison-loading">Loading Overpayment Summary...</div>';
+            html += '</div>';
+            
+            // Tab 4: AI Generated SO Price Changes
+            html += '<div id="tab-content-4" class="tab-content">';
+            html += '<div class="comparison-loading">Loading AI Generated SO Price Changes...</div>';
+            html += '</div>';
+            
+            // Tab 5: Sales Order Totals (All)
+            html += '<div id="tab-content-5" class="tab-content">';
+            html += '<div class="comparison-loading">Loading Sales Order Totals...</div>';
             html += '</div>';
             
             html += '</div>';
@@ -696,7 +730,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 // Unified EXPLAIN button
                 var hasAI = aiAnalysisLookup && aiAnalysisLookup[cm.cmId];
                 html += '<td class="action-btn-cell">';
-                html += '<button type="button" class="explain-btn" onclick="showExplainModal(' + cm.cmId + ')" title="Explain Transaction: SO/INV Comparison, Cross-SO Analysis, AI Insights">EXPLAIN</button>';
+                html += '<button type="button" class="explain-btn" onclick="showExplainModal(' + cm.cmId + ', \'' + escapeHtml(cm.customerName).replace(/'/g, '\\\'') + '\', \'' + escapeHtml(cm.cmNumber) + '\', ' + cm.cmAmount + ', \'' + escapeHtml(cm.linkedCD || '') + '\', \'' + escapeHtml(cm.salesOrderNumber || '') + '\')" title="Explain Transaction: SO/INV Comparison, Cross-SO Analysis, AI Insights">EXPLAIN</button>';
                 if (hasAI) {
                     html += '<br><span class="ai-badge" title="AI analysis available">AI</span>';
                 }
@@ -1347,13 +1381,6 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '.comparison-modal-close { cursor: pointer; font-size: 28px; line-height: 1; opacity: 0.8; padding: 0 8px; }' +
                 '.comparison-modal-close:hover { opacity: 1; }' +
                 
-                /* AI Analysis Button in Modal */
-                '.ai-button-container { padding: 16px 20px; background: #f8f9fa; border-bottom: 1px solid #dee2e6; }' +
-                '.ai-analysis-trigger-btn { padding: 10px 20px; font-size: 14px; font-weight: 700; color: #fff; background: linear-gradient(135deg, #7c4dff, #651fff); border: none; border-radius: 6px; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 4px rgba(124,77,255,0.3); width: 100%; text-align: center; }' +
-                '.ai-analysis-trigger-btn:hover { background: linear-gradient(135deg, #651fff, #6200ea); box-shadow: 0 3px 8px rgba(124,77,255,0.4); transform: translateY(-1px); }' +
-                '.ai-analysis-trigger-btn:disabled { background: #ccc; cursor: not-allowed; opacity: 0.6; }' +
-                '.ai-icon { font-size: 16px; margin-right: 6px; }' +
-                
                 /* Tab Navigation */
                 '.tab-navigation { display: flex; background: #f8f9fa; border-bottom: 2px solid #dee2e6; padding: 0 20px; }' +
                 '.tab-button { flex: 1; padding: 12px 16px; font-size: 14px; font-weight: 600; color: #666; background: transparent; border: none; border-bottom: 3px solid transparent; cursor: pointer; transition: all 0.2s; }' +
@@ -1399,6 +1426,13 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '.comparison-table td { padding: 8px; border-bottom: 1px solid #eee; }' +
                 '.comparison-table tr:hover td { background: #f5f5f5; }' +
                 '.comparison-table .amount { text-align: right; font-family: monospace; }' +
+
+                /* Sales Order Totals Visual Column Grouping */
+                '.so-totals-table td.group-total-start, .so-totals-table td.group-total-end { background: rgba(76, 175, 80, 0.1) !important; }' +
+                '.so-totals-table td.group-nontax-start, .so-totals-table td.group-nontax-end { background: rgba(33, 150, 243, 0.1) !important; }' +
+                '.so-totals-table td.group-tax-start, .so-totals-table td.group-tax-end { background: rgba(255, 235, 59, 0.15) !important; }' +
+                '.so-totals-table tr.bill-variance-row td { border-top: 3px solid #9c27b0 !important; border-bottom: 3px solid #9c27b0 !important; }' +
+                '.so-totals-table .unbilled-amount { color: #9c27b0; font-weight: 600; }' +
                 '.comparison-table .match { color: #4caf50; font-weight: 600; }' +
                 '.comparison-table .mismatch { color: #d32f2f; font-weight: 600; }' +
                 '.comparison-table .not-invoiced { color: #daa520; font-weight: 600; }' +
@@ -1407,7 +1441,6 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '.comparison-table .variance-positive { color: #4caf50; }' +
                 '.comparison-table .variance-negative { color: #d32f2f; }' +
                 '.match-row { background: #f1f8f4; }' +
-                '.mismatch-row { background: #fef5f5; }' +
                 '.no-invoice-row { background: #fff8e1; }' +
                 '.overpayment-row { background: #fff3cd; border: 2px solid #ffc107 !important; }' +
                 '.status-badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }' +
@@ -1955,27 +1988,51 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 'var currentTab = 1;' +
                 'var tab1Loaded = false;' +
                 'var tab2Loaded = false;' +
+                'var tab3Loaded = false;' +
                 '' +
                 '/* Show Unified Explain Modal */' +
-                'function showExplainModal(creditMemoId) {' +
+                'function showExplainModal(creditMemoId, customerName, cmNumber, cmAmount, linkedCD, salesOrder) {' +
                 '    currentCreditMemoId = creditMemoId;' +
                 '    currentTab = 1;' +
                 '    tab1Loaded = false;' +
                 '    tab2Loaded = false;' +
+                '    tab3Loaded = false;' +
+                '    tab4Loaded = false;' +
+                '    tab5Loaded = false;' +
+                '    tab4HasExistingRecord = false;' +
                 '    ' +
                 '    var modal = document.getElementById("explainModal");' +
                 '    var overlay = document.getElementById("explainModalOverlay");' +
+                '    ' +
+                '    /* Populate Customer Information Section */' +
+                '    var customerInfo = document.getElementById("customerInfoSection");' +
+                '    var infoHtml = "<div style=\\"display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;\\\">";' +
+                '    infoHtml += "<div><strong style=\\"color:#495057;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;\\">Customer</strong><div style=\\"font-size:16px;font-weight:600;color:#212529;margin-top:4px;\\">" + customerName + "</div></div>";' +
+                '    infoHtml += "<div><strong style=\\"color:#495057;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;\\">Credit Memo</strong><div style=\\"font-size:16px;font-weight:600;color:#dc3545;margin-top:4px;\\">" + cmNumber + "</div></div>";' +
+                '    infoHtml += "<div><strong style=\\"color:#495057;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;\\">CM Amount</strong><div style=\\"font-size:16px;font-weight:600;color:#dc3545;margin-top:4px;\\">-" + formatCompCurrency(cmAmount) + "</div></div>";' +
+                '    if (linkedCD) {' +
+                '        infoHtml += "<div><strong style=\\"color:#495057;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;\\">CD #</strong><div style=\\"font-size:16px;font-weight:600;color:#28a745;margin-top:4px;\\">" + linkedCD + "</div></div>";' +
+                '    }' +
+                '    if (salesOrder) {' +
+                '        infoHtml += "<div><strong style=\\"color:#495057;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;\\">Sales Order #</strong><div style=\\"font-size:16px;font-weight:600;color:#007bff;margin-top:4px;\\">" + salesOrder + "</div></div>";' +
+                '    }' +
+                '    infoHtml += "</div>";' +
+                '    customerInfo.innerHTML = infoHtml;' +
+                '    customerInfo.style.display = "block";' +
                 '    ' +
                 '    /* Reset tabs */' +
                 '    document.getElementById("tab-btn-1").classList.add("active");' +
                 '    document.getElementById("tab-btn-2").classList.remove("active");' +
                 '    document.getElementById("tab-btn-3").classList.remove("active");' +
-                '    document.getElementById("tab-btn-3").style.display = "none";' +
+                '    document.getElementById("tab-btn-4").classList.remove("active");' +
+                '    document.getElementById("tab-btn-5").classList.remove("active");' +
                 '    ' +
                 '    document.getElementById("tab-content-1").classList.add("active");' +
                 '    document.getElementById("tab-content-2").classList.remove("active");' +
                 '    document.getElementById("tab-content-3").classList.remove("active");' +
-                '    document.getElementById("tab-content-3").innerHTML = "<div class=\\"comparison-loading\\">Click the AI Analysis button above to begin...</div>";' +
+                '    document.getElementById("tab-content-4").classList.remove("active");' +
+                '    document.getElementById("tab-content-5").classList.remove("active");' +
+                '    document.getElementById("tab-content-4").innerHTML = "<div class=\\"comparison-loading\\">Loading AI Generated SO Price Changes...</div>";' +
                 '    ' +
                 '    /* Show modal */' +
                 '    modal.classList.add("visible");' +
@@ -1997,7 +2054,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    currentTab = tabNumber;' +
                 '    ' +
                 '    /* Update tab buttons */' +
-                '    for (var i = 1; i <= 3; i++) {' +
+                '    for (var i = 1; i <= 5; i++) {' +
                 '        var btn = document.getElementById("tab-btn-" + i);' +
                 '        var content = document.getElementById("tab-content-" + i);' +
                 '        if (i === tabNumber) {' +
@@ -2014,6 +2071,12 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '        loadTab1Data();' +
                 '    } else if (tabNumber === 2 && !tab2Loaded) {' +
                 '        loadTab2Data();' +
+                '    } else if (tabNumber === 3 && !tab3Loaded) {' +
+                '        loadTab3Data();' +
+                '    } else if (tabNumber === 4 && !tab4Loaded) {' +
+                '        loadTab4Data();' +
+                '    } else if (tabNumber === 5 && !tab5Loaded) {' +
+                '        loadTab5Data();' +
                 '    }' +
                 '}' +
                 '' +
@@ -2065,42 +2128,260 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    });' +
                 '}' +
                 '' +
-                '/* Trigger AI Analysis */' +
-                'function triggerAIAnalysis() {' +
-                '    var btn = document.getElementById("aiAnalysisButton");' +
-                '    var tabBtn = document.getElementById("tab-btn-3");' +
+                '/* Load Tab 3: Overpayment Summary */' +
+                'function loadTab3Data() {' +
                 '    var body = document.getElementById("tab-content-3");' +
-                '    ' +
-                '    /* Show tab 3 and switch to it */' +
-                '    tabBtn.style.display = "block";' +
-                '    switchExplainTab(3);' +
-                '    ' +
-                '    /* Disable button and show loading */' +
-                '    btn.disabled = true;' +
-                '    btn.innerHTML = "<span class=\\"ai-icon\\">\ud83e\udd16</span> Running AI Analysis...";' +
-                '    body.innerHTML = "<div class=\\"comparison-loading\\">Running AI Analysis... This may take 10-30 seconds...</div>";' +
+                '    body.innerHTML = "<div class=\\"comparison-loading\\">Loading Overpayment Summary...</div>";' +
                 '    ' +
                 '    fetch("' + scriptUrl + '", {' +
                 '        method: "POST",' +
                 '        headers: { "Content-Type": "application/json" },' +
-                '        body: JSON.stringify({ action: "analyzeTransactions", creditMemoId: currentCreditMemoId })' +
+                '        body: JSON.stringify({ action: "overpaymentSummary", creditMemoId: currentCreditMemoId })' +
                 '    })' +
                 '    .then(function(response) { return response.json(); })' +
                 '    .then(function(result) {' +
-                '        btn.disabled = false;' +
-                '        btn.innerHTML = "<span class=\\"ai-icon\\">\ud83e\udd16</span> AI Analysis with SO Lifecycle";' +
-                '        ' +
                 '        if (result.success && result.data) {' +
                 '            renderTab3Result(result.data);' +
+                '            tab3Loaded = true;' +
                 '        } else {' +
                 '            body.innerHTML = "<div class=\\"error-msg\\">Error: " + (result.data && result.data.error ? result.data.error : "Unknown error") + "</div>";' +
                 '        }' +
                 '    })' +
                 '    .catch(function(err) {' +
-                '        btn.disabled = false;' +
-                '        btn.innerHTML = "<span class=\\"ai-icon\\">\ud83e\udd16</span> AI Analysis with SO Lifecycle";' +
+                '        body.innerHTML = "<div class=\\"error-msg\\">Error loading summary: " + err.message + "</div>";' +
+                '    });' +
+                '}' +
+                '' +
+                '/* Trigger AI Analysis */' +
+                'var tab4Loaded = false;' +
+                'var tab4HasExistingRecord = false;' +
+                '' +
+                '/* Load Tab 4: AI Generated SO Price Changes */' +
+                'function loadTab4Data() {' +
+                '    var body = document.getElementById("tab-content-4");' +
+                '    body.innerHTML = "<div class=\\"comparison-loading\\">Loading AI Generated SO Price Changes...</div>";' +
+                '    ' +
+                '    /* First check if there is an existing AI record */' +
+                '    fetch("' + scriptUrl + '", {' +
+                '        method: "POST",' +
+                '        headers: { "Content-Type": "application/json" },' +
+                '        body: JSON.stringify({ action: "loadAIAnalysis", creditMemoId: currentCreditMemoId })' +
+                '    })' +
+                '    .then(function(response) { return response.json(); })' +
+                '    .then(function(result) {' +
+                '        if (result.success && result.aiAnalysis && result.aiAnalysis.found) {' +
+                '            /* Existing record found - display it with Re-Run button */' +
+                '            tab4HasExistingRecord = true;' +
+                '            tab4Loaded = true;' +
+                '            var data = result.aiAnalysis;' +
+                '            renderTab4ResultWithRerun({' +
+                '                haikuResponse: data.haikuResponse,' +
+                '                savedRecordId: data.recordId,' +
+                '                createdDate: data.createdDate' +
+                '            });' +
+                '        } else {' +
+                '            /* No existing record - auto-run AI analysis */' +
+                '            tab4HasExistingRecord = false;' +
+                '            runTab4AIAnalysis();' +
+                '        }' +
+                '    })' +
+                '    .catch(function(err) {' +
+                '        body.innerHTML = "<div class=\\"error-msg\\">Error checking for existing analysis: " + err.message + "</div>";' +
+                '    });' +
+                '}' +
+                '' +
+                '/* Run AI Analysis for Tab 4 */' +
+                'function runTab4AIAnalysis() {' +
+                '    var body = document.getElementById("tab-content-4");' +
+                '    body.innerHTML = "<div class=\\"comparison-loading\\">Running AI Analysis... This may take 10-30 seconds...</div>";' +
+                '    ' +
+                '    fetch("' + scriptUrl + '", {' +
+                '        method: "POST",' +
+                '        headers: { "Content-Type": "application/json" },' +
+                '        body: JSON.stringify({ action: "aiAnalysis", creditMemoId: currentCreditMemoId, comparisonData: window.currentComparisonData })' +
+                '    })' +
+                '    .then(function(response) { return response.json(); })' +
+                '    .then(function(result) {' +
+                '        if (result.success && result.data) {' +
+                '            tab4Loaded = true;' +
+                '            tab4HasExistingRecord = true;' +
+                '            renderTab4ResultWithRerun(result.data);' +
+                '        } else {' +
+                '            body.innerHTML = "<div class=\\"error-msg\\">Error: " + (result.data && result.data.error ? result.data.error : "Unknown error") + "</div>";' +
+                '        }' +
+                '    })' +
+                '    .catch(function(err) {' +
                 '        body.innerHTML = "<div class=\\"error-msg\\">Error running AI analysis: " + err.message + "</div>";' +
                 '    });' +
+                '}' +
+                '' +
+                '/* Legacy trigger function - now calls loadTab4Data */' +
+                'function triggerAIAnalysis() {' +
+                '    switchExplainTab(4);' +
+                '}' +
+                '' +
+                '/* Load Tab 5: Sales Order Totals (All) */' +
+                'function loadTab5Data() {' +
+                '    var body = document.getElementById("tab-content-5");' +
+                '    body.innerHTML = "<div class=\\"comparison-loading\\">Loading Sales Order Totals...</div>";' +
+                '    ' +
+                '    fetch("' + scriptUrl + '", {' +
+                '        method: "POST",' +
+                '        headers: { "Content-Type": "application/json" },' +
+                '        body: JSON.stringify({ action: "salesOrderTotals", creditMemoId: currentCreditMemoId })' +
+                '    })' +
+                '    .then(function(response) { return response.json(); })' +
+                '    .then(function(result) {' +
+                '        if (result.success && result.data) {' +
+                '            renderTab5Result(result.data);' +
+                '            tab5Loaded = true;' +
+                '        } else {' +
+                '            body.innerHTML = "<div class=\\"error-msg\\">Error: " + (result.data && result.data.error ? result.data.error : "Unknown error") + "</div>";' +
+                '        }' +
+                '    })' +
+                '    .catch(function(err) {' +
+                '        body.innerHTML = "<div class=\\"error-msg\\">Error loading sales order totals: " + err.message + "</div>";' +
+                '    });' +
+                '}' +
+                '' +
+                '/* Render Tab 5: Sales Order Totals (All) Result */' +
+                'function renderTab5Result(data) {' +
+                '    var body = document.getElementById("tab-content-5");' +
+                '    ' +
+                '    if (data.error) {' +
+                '        body.innerHTML = "<div class=\\"error-msg\\"><strong>Error:</strong> " + data.error + "</div>";' +
+                '        return;' +
+                '    }' +
+                '    ' +
+                '    var html = "";' +
+                '    ' +
+                '    /* Helper Text */' +
+                '    html += "<div style=\\"margin:0 0 20px;padding:15px;background:#e8f5e9;border-left:4px solid #4CAF50;border-radius:4px;\\">";' +
+                '    html += "<strong>Customer Sales Orders Summary:</strong> This view shows all sales orders for <strong>" + (data.customerName || "this customer") + "</strong>. ";' +
+                '    html += "Review tax discrepancies and billing variances to identify potential issues with invoicing.";' +
+                '    html += "</div>";' +
+                '    ' +
+                '    /* Summary Cards */' +
+                '    var summary = data.summary || {};' +
+                '    var totalSalesOrders = summary.totalSalesOrders || 0;' +
+                '    var totalOrderAmount = summary.totalOrderAmount || 0;' +
+                '    var totalBilledAmount = summary.totalBilledAmount || 0;' +
+                '    var totalUnbilledAmount = summary.totalUnbilledAmount || 0;' +
+                '    var totalOrderNonTaxAmount = summary.totalOrderNonTaxAmount || 0;' +
+                '    var totalOrderTaxAmount = summary.totalOrderTaxAmount || 0;' +
+                '    var totalBilledNonTaxAmount = summary.totalBilledNonTaxAmount || 0;' +
+                '    var totalBilledTaxAmount = summary.totalBilledTaxAmount || 0;' +
+                '    var taxDiscrepancyCount = summary.taxDiscrepancyCount || 0;' +
+                '    var billingVarianceCount = summary.billingVarianceCount || 0;' +
+                '    ' +
+                '    html += "<div class=\\"comparison-summary\\">";' +
+                '    html += "<div class=\\"comparison-card info\\"><div class=\\"comparison-card-label\\">Total Sales Orders</div><div class=\\"comparison-card-value\\">" + totalSalesOrders + "</div></div>";' +
+                '    html += "<div class=\\"comparison-card\\"><div class=\\"comparison-card-label\\">SO Total (with Tax)</div><div class=\\"comparison-card-value\\">" + formatCompCurrency(totalOrderAmount) + "</div></div>";' +
+                '    html += "<div class=\\"comparison-card\\"><div class=\\"comparison-card-label\\">Invoiced (with Tax)</div><div class=\\"comparison-card-value\\">" + formatCompCurrency(totalBilledAmount) + "</div></div>";' +
+                '    html += "<div class=\\"comparison-card " + (totalUnbilledAmount > 0.01 ? "warning" : "success") + "\\"><div class=\\"comparison-card-label\\">Unbilled Amount</div><div class=\\"comparison-card-value\\">" + formatCompCurrency(totalUnbilledAmount) + "</div></div>";' +
+                '    html += "</div>";' +
+                '    ' +
+                '    /* Variance Alerts */' +
+                '    if (taxDiscrepancyCount > 0 || billingVarianceCount > 0) {' +
+                '        html += "<div style=\\"margin:20px 0;padding:15px;background:#fff3e0;border:1px solid #f57c00;border-radius:6px;\\">";' +
+                '        html += "<strong style=\\"color:#e65100;\\">⚠️ Issues Detected:</strong>";' +
+                '        html += "<ul style=\\"margin:10px 0 0 20px;padding:0;\\">";' +
+                '        if (taxDiscrepancyCount > 0) {' +
+                '            html += "<li><strong>" + taxDiscrepancyCount + " Tax Discrepanc" + (taxDiscrepancyCount === 1 ? "y" : "ies") + "</strong>: SO tax amounts differ from invoiced tax amounts</li>";' +
+                '        }' +
+                '        if (billingVarianceCount > 0) {' +
+                '            html += "<li><strong>" + billingVarianceCount + " Billing Variance" + (billingVarianceCount === 1 ? "" : "s") + "</strong>: Fully billed orders with amount mismatches (Status G)</li>";' +
+                '        }' +
+                '        html += "</ul></div>";' +
+                '    }' +
+                '    ' +
+                '    /* Sales Orders Table */' +
+                '    html += "<div class=\\"comparison-table-container\\">";' +
+                '    html += "<table class=\\"comparison-table so-totals-table\\">";' +
+                '    html += "<thead><tr>";' +
+                '    html += "<th>SO #</th>";' +
+                '    html += "<th>SO Date</th>";' +
+                '    html += "<th>Status</th>";' +
+                '    html += "<th class=\\"amount group-total-start\\">SO Total</th>";' +
+                '    html += "<th class=\\"amount group-total-end\\">INV Total</th>";' +
+                '    html += "<th class=\\"amount\\">SO Unbilled</th>";' +
+                '    html += "<th class=\\"amount group-nontax-start\\">SO Non-Tax</th>";' +
+                '    html += "<th class=\\"amount group-nontax-end\\">INV Non-Tax</th>";' +
+                '    html += "<th class=\\"amount group-tax-start\\">SO Tax</th>";' +
+                '    html += "<th class=\\"amount group-tax-end\\">INV Tax</th>";' +
+                '    html += "<th>Created Date</th>";' +
+                '    html += "<th>Created By</th>";' +
+                '    html += "<th>Issues</th>";' +
+                '    html += "</tr></thead>";' +
+                '    html += "<tbody>";' +
+                '    ' +
+                '    var salesOrders = data.salesOrders || [];' +
+                '    for (var i = 0; i < salesOrders.length; i++) {' +
+                '        var so = salesOrders[i];' +
+                '        var soTranid = so.soTranId || "-";' +
+                '        var soId = so.soId || "";' +
+                '        var trandate = so.soDate ? so.soDate.split(" ")[0] : "-";' +
+                '        var createdDate = so.soCreatedDate ? so.soCreatedDate.split(" ")[0] : "-";' +
+                '        var status = so.soStatusText || "-";' +
+                '        var creator = so.soCreatedBy || "-";' +
+                '        var soNontax = so.soNontaxAmount || 0;' +
+                '        var soTax = so.soTaxAmount || 0;' +
+                '        var soTotal = so.soTotalAmount || 0;' +
+                '        var invNontax = so.invNontaxBilled || 0;' +
+                '        var invTax = so.invTaxBilled || 0;' +
+                '        var invTotal = so.invTotalBilled || 0;' +
+                '        var unbilled = so.soTotalUnbilled || 0;' +
+                '        var soTaxPct = so.soTaxPct || 0;' +
+                '        var invTaxPct = so.invTaxPct || 0;' +
+                '        var hasTaxDisc = so.hasTaxDiscrepancy || false;' +
+                '        var hasBillVar = so.hasBillingVariance || false;' +
+                '        ' +
+                '        var issuesHtml = "";' +
+                '        if (hasBillVar) {' +
+                '            issuesHtml += "<span class=\\"status-badge\\" style=\\"background:#9c27b0;color:#fff;\\" title=\\"Fully billed but amounts don\'t match\\">BILL VAR</span> ";' +
+                '        }' +
+                '        if (hasTaxDisc) {' +
+                '            issuesHtml += "<span class=\\"status-badge status-warning\\" title=\\"Tax amounts differ between SO and invoices\\">TAX DISC</span>";' +
+                '        }' +
+                '        if (!hasBillVar && !hasTaxDisc) {' +
+                '            issuesHtml = "<span style=\\"color:#4caf50;\\">✓</span>";' +
+                '        }' +
+                '        ' +
+                '        var rowClass = hasBillVar ? "bill-variance-row" : "";' +
+                '        ' +
+                '        html += "<tr class=\\"" + rowClass + "\\">";' +
+                '        html += "<td><a href=\\"/app/accounting/transactions/salesord.nl?id=" + soId + "\\" target=\\"_blank\\">" + soTranid + "</a></td>";' +
+                '        html += "<td>" + trandate + "</td>";' +
+                '        html += "<td>" + status + "</td>";' +
+                '        html += "<td class=\\"amount group-total-start\\">" + formatCompCurrency(soTotal) + "</td>";' +
+                '        html += "<td class=\\"amount group-total-end\\">" + formatCompCurrency(invTotal) + "</td>";' +
+                '        html += "<td class=\\"amount " + (unbilled > 0.01 ? "unbilled-amount" : "") + "\\">" + formatCompCurrency(unbilled) + "</td>";' +
+                '        html += "<td class=\\"amount group-nontax-start\\">" + formatCompCurrency(soNontax) + "</td>";' +
+                '        html += "<td class=\\"amount group-nontax-end\\">" + formatCompCurrency(invNontax) + "</td>";' +
+                '        html += "<td class=\\"amount group-tax-start\\">" + formatCompCurrency(soTax) + "<br><span style=\\"color:#666;font-size:11px;\\">(" + soTaxPct + "%)</span></td>";' +
+                '        html += "<td class=\\"amount group-tax-end\\">" + formatCompCurrency(invTax) + "<br><span style=\\"color:#666;font-size:11px;\\">(" + invTaxPct + "%)</span></td>";' +
+                '        html += "<td>" + createdDate + "</td>";' +
+                '        html += "<td>" + creator + "</td>";' +
+                '        html += "<td>" + issuesHtml + "</td>";' +
+                '        html += "</tr>";' +
+                '    }' +
+                '    ' +
+                '    /* Totals Row */' +
+                '    html += "<tr class=\\"comparison-totals\\">";' +
+                '    html += "<td colspan=\\"3\\"><strong>TOTALS</strong></td>";' +
+                '    html += "<td class=\\"amount group-total-start\\">" + formatCompCurrency(totalOrderAmount) + "</td>";' +
+                '    html += "<td class=\\"amount group-total-end\\">" + formatCompCurrency(totalBilledAmount) + "</td>";' +
+                '    html += "<td class=\\"amount\\">" + formatCompCurrency(totalUnbilledAmount) + "</td>";' +
+                '    html += "<td class=\\"amount group-nontax-start\\">" + formatCompCurrency(totalOrderNonTaxAmount) + "</td>";' +
+                '    html += "<td class=\\"amount group-nontax-end\\">" + formatCompCurrency(totalBilledNonTaxAmount) + "</td>";' +
+                '    html += "<td class=\\"amount group-tax-start\\">" + formatCompCurrency(totalOrderTaxAmount) + "</td>";' +
+                '    html += "<td class=\\"amount group-tax-end\\">" + formatCompCurrency(totalBilledTaxAmount) + "</td>";' +
+                '    html += "<td colspan=\\"3\\"></td>";' +
+                '    html += "</tr>";' +
+                '    ' +
+                '    html += "</tbody></table></div>";' +
+                '    ' +
+                '    body.innerHTML = html;' +
                 '}' +
                 '' +
                 '/* Render Tab 1: SO↔INV Comparison Result */' +
@@ -2120,6 +2401,13 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    };' +
                 '    ' +
                 '    var html = "";' +
+                '    ' +
+                '    /* Helper Text */' +
+                '    html += "<div style=\\"margin:0 0 20px;padding:15px;background:#e3f2fd;border-left:4px solid #1976d2;border-radius:4px;\\">";' +
+                '    html += "<strong>What This Analysis Shows:</strong> This comparison examines line-by-line differences between the Sales Order and Invoices. ";' +
+                '    html += "A mismatch variance indicates items were billed at incorrect amounts or the sales order was changed after invoicing. ";' +
+                '    html += "These discrepancies prevent customer deposits from being correctly utilized and applied, potentially causing overpayments.";' +
+                '    html += "</div>";' +
                 '    ' +
                 '    /* Transaction Links with Amounts */' +
                 '    html += "<div class=\\"comparison-transactions\\">";' +
@@ -2326,6 +2614,21 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    ' +
                 '    var html = "";' +
                 '    ' +
+                '    /* Helper Text */' +
+                '    html += "<div style=\\"margin:0 0 20px;padding:15px;background:#e3f2fd;border-left:4px solid #1976d2;border-radius:4px;\\">";' +
+                '    html += "<strong>What This Analysis Shows:</strong> This compares the \\"Created From\\" Source Sales Order from each Customer Deposit to the \\"Created From\\" Source Sales Order from the Invoice it was applied to. ";' +
+                '    html += "A <span style=\\"color:#28a745;font-weight:bold;\\">✓ MATCH</span> (green checkmark) confirms the CD was applied to an invoice in the proper SO→Invoice trail. ";' +
+                '    html += "A <span style=\\"color:#dc3545;font-weight:bold;\\">✗ CROSS-SO</span> mismatch (red X) indicates the CD and Invoice came from different sales orders.";' +
+                '    html += "</div>";' +
+                '    ' +
+                '    /* Overall Summary Based on Mismatches */' +
+                '    var mismatchSummaryClass = data.mismatches === 0 ? "match" : "mismatch";' +
+                '    var mismatchSummaryIcon = data.mismatches === 0 ? "✓" : "⚠️";' +
+                '    var mismatchSummaryText = data.mismatches === 0 ' +
+                '        ? "<strong>" + mismatchSummaryIcon + " No Cross-SO Mismatches Found:</strong> Cross-SO deposit applications are NOT the source of this overpayment. The deposits were correctly applied to invoices from their originating sales orders."' +
+                '        : "<strong>" + mismatchSummaryIcon + " Cross-SO Mismatches Detected:</strong> Found " + data.mismatches + " deposit application(s) where the CD and Invoice came from different sales orders. This may be a contributor to the overpayment.";' +
+                '    html += "<div class=\\"comparison-conclusion " + mismatchSummaryClass + "\\" style=\\"margin-bottom:20px;\\">" + mismatchSummaryText + "</div>";' +
+                '    ' +
                 '    /* Summary Cards */' +
                 '    html += "<div class=\\"comparison-summary\\">";' +
                 '    html += "<div class=\\"comparison-card\\">";' +
@@ -2353,6 +2656,15 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    ' +
                 '    /* Applications Table */' +
                 '    if (data.applications && data.applications.length > 0) {' +
+                '        /* Check if we need the Alternate Applications column */' +
+                '        var hasAlternateApps = false;' +
+                '        for (var j = 0; j < data.applications.length; j++) {' +
+                '            if (data.applications[j].appliedTranType && data.applications[j].appliedTranType !== "Invoice") {' +
+                '                hasAlternateApps = true;' +
+                '                break;' +
+                '            }' +
+                '        }' +
+                '        ' +
                 '        html += "<h3 style=\\"margin:20px 0 10px;\\">Deposit Applications</h3>";' +
                 '        html += "<table class=\\"comparison-table\\">";' +
                 '        html += "<thead><tr>";' +
@@ -2362,7 +2674,9 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '        html += "<th>Invoice</th>";' +
                 '        html += "<th>INV Source SO</th>";' +
                 '        html += "<th>Amount Applied</th>";' +
-                '        html += "<th>Applied To</th>";' +
+                '        if (hasAlternateApps) {' +
+                '            html += "<th>Alternate Applications</th>";' +
+                '        }' +
                 '        html += "</tr></thead><tbody>";' +
                 '        ' +
                 '        for (var i = 0; i < data.applications.length; i++) {' +
@@ -2395,36 +2709,157 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '                statusBadge += " <span class=\\"status-badge status-overpayment\\">🎯 OVERPAYMENT</span>";' +
                 '            }' +
                 '            ' +
-                '            /* Build Applied To column with transaction type and link */' +
-                '            var appliedToCell = "";' +
-                '            if (app.appliedTranType && app.appliedTranNumber && app.appliedTranId) {' +
-                '                var tranUrl = "";' +
-                '                if (app.appliedTranType === "Invoice") {' +
-                '                    tranUrl = "/app/accounting/transactions/custinvc.nl?id=" + app.appliedTranId;' +
-                '                } else if (app.appliedTranType === "Refund") {' +
-                '                    tranUrl = "/app/accounting/transactions/custref.nl?id=" + app.appliedTranId;' +
-                '                } else if (app.appliedTranType === "Credit Memo") {' +
-                '                    tranUrl = "/app/accounting/transactions/custcred.nl?id=" + app.appliedTranId;' +
+                '            /* Add checkmarks/X for SO source matching */' +
+                '            var cdSourceSODisplay = app.cdSourceSO || "N/A";' +
+                '            var invSourceSODisplay = app.invSourceSO || "N/A";' +
+                '            if (app.status === "match" && app.cdSourceSO && app.cdSourceSO !== "N/A" && app.invSourceSO && app.invSourceSO !== "N/A") {' +
+                '                cdSourceSODisplay = "<span style=\\"color:#28a745;font-weight:bold;\\">✓</span> " + app.cdSourceSO;' +
+                '                invSourceSODisplay = "<span style=\\"color:#28a745;font-weight:bold;\\">✓</span> " + app.invSourceSO;' +
+                '            } else if (app.status === "cross-so") {' +
+                '                cdSourceSODisplay = "<span style=\\"color:#dc3545;font-weight:bold;\\">✗</span> " + app.cdSourceSO;' +
+                '                invSourceSODisplay = "<span style=\\"color:#dc3545;font-weight:bold;\\">✗</span> " + app.invSourceSO;' +
+                '            }' +
+                '            ' +
+                '            /* Build Alternate Applications column (only show non-invoice applications) */' +
+                '            var alternateAppCell = "";' +
+                '            if (hasAlternateApps) {' +
+                '                if (app.appliedTranType && app.appliedTranType !== "Invoice" && app.appliedTranNumber && app.appliedTranId) {' +
+                '                    var tranUrl = "";' +
+                '                    if (app.appliedTranType === "Refund") {' +
+                '                        tranUrl = "/app/accounting/transactions/custref.nl?id=" + app.appliedTranId;' +
+                '                    } else if (app.appliedTranType === "Credit Memo") {' +
+                '                        tranUrl = "/app/accounting/transactions/custcred.nl?id=" + app.appliedTranId;' +
+                '                    } else {' +
+                '                        tranUrl = "/app/common/entity/custjob.nl?id=" + app.appliedTranId;' +
+                '                    }' +
+                '                    alternateAppCell = "<a href=\\"" + tranUrl + "\\" target=\\"_blank\\">" + app.appliedTranType + " " + app.appliedTranNumber + "</a>";' +
                 '                } else {' +
-                '                    tranUrl = "/app/common/entity/custjob.nl?id=" + app.appliedTranId;' +
+                '                    alternateAppCell = "<em style=\\"color:#999;\\">-</em>";' +
                 '                }' +
-                '                appliedToCell = "<a href=\\"" + tranUrl + "\\" target=\\"_blank\\">" + app.appliedTranType + " " + app.appliedTranNumber + "</a>";' +
-                '            } else {' +
-                '                appliedToCell = "<em style=\\"color:#999;\\">N/A</em>";' +
                 '            }' +
                 '            ' +
                 '            html += "<tr class=\\"" + rowClass + "\\">";' +
                 '            html += "<td>" + statusBadge + "</td>";' +
                 '            html += "<td><a href=\\"/app/accounting/transactions/custdep.nl?id=" + app.cdId + "\\" target=\\"_blank\\">" + app.cdTranId + "</a></td>";' +
-                '            html += "<td>" + (app.cdSourceSO || "N/A") + "</td>";' +
+                '            html += "<td>" + cdSourceSODisplay + "</td>";' +
                 '            html += "<td>" + (app.invTranId ? "<a href=\\"/app/accounting/transactions/custinvc.nl?id=" + app.invId + "\\" target=\\"_blank\\">" + app.invTranId + "</a>" : "<em style=\\"color:#999;\\">N/A</em>") + "</td>";' +
-                '            html += "<td>" + (app.invSourceSO || "N/A") + "</td>";' +
+                '            html += "<td>" + invSourceSODisplay + "</td>";' +
                 '            html += "<td>" + formatCompCurrency(app.amount) + "</td>";' +
-                '            html += "<td>" + appliedToCell + "</td>";' +
+                '            if (hasAlternateApps) {' +
+                '                html += "<td>" + alternateAppCell + "</td>";' +
+                '            }' +
                 '            html += "</tr>";' +
                 '        }' +
                 '        ' +
                 '        html += "</tbody></table>";' +
+                '    }' +
+                '    ' +
+                '    body.innerHTML = html;' +
+                '}' +
+                '' +
+                '/* Render Tab 3: Overpayment Summary Result */' +
+                'function renderTab3Result(data) {' +
+                '    var body = document.getElementById("tab-content-3");' +
+                '    ' +
+                '    if (data.error) {' +
+                '        body.innerHTML = "<div class=\\"error-msg\\"><strong>Error:</strong> " + data.error + "</div>";' +
+                '        return;' +
+                '    }' +
+                '    ' +
+                '    var html = "";' +
+                '    ' +
+                '    /* Helper Text */' +
+                '    html += "<div style=\\"margin:0 0 20px;padding:15px;background:#e3f2fd;border-left:4px solid #1976d2;border-radius:4px;\\">";' +
+                '    html += "<strong>What This Analysis Shows:</strong> Overpayments are calculated per Sales Order. ";' +
+                '    html += "Each section below shows a Sales Order, its deposit vs invoice calculation, and the Credit Memo(s) created from that overpayment.";' +
+                '    html += "</div>";' +
+                '    ' +
+                '    /* Overall Summary - Match CD Cross-SO tab style with grey background */' +
+                '    if (data.salesOrders && data.salesOrders.length > 0) {' +
+                '        html += "<div style=\\"display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:25px;\\">";' +
+                '        html += "<div style=\\"padding:16px;background:#f8f9fa;border:1px solid #dee2e6;border-radius:4px;text-align:center;\\">";' +
+                '        html += "<div style=\\"font-size:11px;color:#6c757d;margin-bottom:6px;text-transform:uppercase;font-weight:600;letter-spacing:0.5px;\\">SALES ORDERS WITH OVERPAYMENTS</div>";' +
+                '        html += "<div style=\\"font-size:28px;font-weight:700;color:#212529;\\">" + data.salesOrders.length + "</div>";' +
+                '        html += "</div>";' +
+                '        html += "<div style=\\"padding:16px;background:#f8f9fa;border:1px solid #dee2e6;border-radius:4px;text-align:center;\\">";' +
+                '        html += "<div style=\\"font-size:11px;color:#6c757d;margin-bottom:6px;text-transform:uppercase;font-weight:600;letter-spacing:0.5px;\\">TOTAL CREDIT MEMOS</div>";' +
+                '        html += "<div style=\\"font-size:28px;font-weight:700;color:#212529;\\">" + data.totalCMCount + "</div>";' +
+                '        html += "</div>";' +
+                '        html += "<div style=\\"padding:16px;background:#f8f9fa;border:1px solid #dee2e6;border-radius:4px;text-align:center;\\">";' +
+                '        html += "<div style=\\"font-size:11px;color:#6c757d;margin-bottom:6px;text-transform:uppercase;font-weight:600;letter-spacing:0.5px;\\">COMBINED CM AMOUNT</div>";' +
+                '        html += "<div style=\\"font-size:28px;font-weight:700;color:#dc3545;\\">-" + formatCompCurrency(data.totalCMAmount) + "</div>";' +
+                '        html += "</div>";' +
+                '        html += "</div>";' +
+                '        ' +
+                '        /* Loop through each Sales Order */' +
+                '        for (var i = 0; i < data.salesOrders.length; i++) {' +
+                '            var so = data.salesOrders[i];' +
+                '            var totalCMsForSO = 0;' +
+                '            for (var j = 0; j < so.creditMemos.length; j++) {' +
+                '                totalCMsForSO += so.creditMemos[j].cmAmount;' +
+                '            }' +
+                '            var varianceMatchesCMs = Math.abs(so.overpaymentVariance - totalCMsForSO) < 0.01;' +
+                '            ' +
+                '            /* SO Card Container - Simple border like other tabs */' +
+                '            html += "<div style=\\"margin-bottom:30px;padding:20px;background:#fff;border:1px solid #dee2e6;border-radius:6px;\\">";' +
+                '            ' +
+                '            /* SO Header */' +
+                '            html += "<div style=\\"margin-bottom:20px;padding-bottom:15px;border-bottom:2px solid #e9ecef;\\">";' +
+                '            html += "<h3 style=\\"margin:0 0 8px;font-size:18px;color:#212529;\\">Sales Order: <a href=\\"/app/accounting/transactions/salesord.nl?id=" + so.soId + "\\" target=\\"_blank\\" style=\\"color:#007bff;\\">" + so.soNumber + "</a></h3>";' +
+                '            html += "<div style=\\"font-size:14px;color:#6c757d;\\">SO Total Value: " + formatCompCurrency(so.soTotal) + "</div>";' +
+                '            html += "</div>";' +
+                '            ' +
+                '            /* Overpayment Calculation */' +
+                '            html += "<div style=\\"background:#f8f9fa;padding:20px;border-radius:6px;margin-bottom:20px;\\">";' +
+                '            html += "<h4 style=\\"margin:0 0 15px;color:#495057;font-size:14px;font-weight:700;text-transform:uppercase;\\">OVERPAYMENT CALCULATION</h4>";' +
+                '            ' +
+                '            html += "<table style=\\"width:100%;border-collapse:collapse;\\">";' +
+                '            html += "<tr style=\\"border-bottom:1px solid #dee2e6;\\">";' +
+                '            html += "<td style=\\"padding:10px 0;font-size:14px;\\">Total Customer Deposits Collected</td>";' +
+                '            html += "<td style=\\"padding:10px 0;text-align:right;font-size:16px;font-weight:700;color:#28a745;\\">" + formatCompCurrency(so.totalDeposits) + "</td>";' +
+                '            html += "</tr>";' +
+                '            html += "<tr style=\\"border-bottom:1px solid #dee2e6;\\">";' +
+                '            html += "<td style=\\"padding:10px 0;font-size:14px;\\">Minus Total Invoiced Value</td>";' +
+                '            html += "<td style=\\"padding:10px 0;text-align:right;font-size:16px;font-weight:700;color:#dc3545;\\">-" + formatCompCurrency(so.totalInvoiced) + "</td>";' +
+                '            html += "</tr>";' +
+                '            html += "<tr style=\\"border-top:2px solid #495057;background:#fff;\\">";' +
+                '            html += "<td style=\\"padding:12px 0;font-size:15px;font-weight:700;\\">= Overpayment Variance</td>";' +
+                '            var varianceIcon = varianceMatchesCMs ? "\u2713" : "\u26a0\ufe0f";' +
+                '            var varianceColor = varianceMatchesCMs ? "#28a745" : "#ff6b6b";' +
+                '            html += "<td style=\\"padding:12px 0;text-align:right;font-size:18px;font-weight:700;color:" + varianceColor + ";\\">" + varianceIcon + " " + formatCompCurrency(so.overpaymentVariance) + "</td>";' +
+                '            html += "</tr>";' +
+                '            html += "</table>";' +
+                '            html += "</div>";' +
+                '            ' +
+                '            /* Credit Memos from this Overpayment */' +
+                '            html += "<div style=\\"background:#fff3cd;padding:16px;border-left:4px solid #ffc107;border-radius:4px;\\">";' +
+                '            html += "<h4 style=\\"margin:0 0 12px;color:#856404;font-size:13px;font-weight:700;text-transform:uppercase;\\">CREDIT MEMOS FROM THIS OVERPAYMENT</h4>";' +
+                '            ' +
+                '            for (var k = 0; k < so.creditMemos.length; k++) {' +
+                '                var cm = so.creditMemos[k];' +
+                '                html += "<div style=\\"margin-bottom:8px;padding:12px;background:#fff;border-radius:4px;border:1px solid #ffc107;\\">";' +
+                '                html += "<div style=\\"display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;\\">";' +
+                '                html += "<div style=\\"font-size:14px;\\"><strong>Credit Memo:</strong> <a href=\\"/app/accounting/transactions/custcred.nl?id=" + cm.cmId + "\\" target=\\"_blank\\" style=\\"color:#dc3545;font-weight:700;\\">" + cm.cmNumber + "</a></div>";' +
+                '                html += "<div style=\\"font-size:14px;\\"><strong>Amount:</strong> <span style=\\"color:#dc3545;font-weight:700;font-size:15px;\\">-" + formatCompCurrency(cm.cmAmount) + "</span></div>";' +
+                '                html += "<div style=\\"font-size:14px;\\"><strong>Customer Deposit:</strong> <a href=\\"/app/accounting/transactions/custdep.nl?id=" + cm.cdId + "\\" target=\\"_blank\\" style=\\"color:#28a745;font-weight:600;\\">" + cm.cdNumber + "</a></div>";' +
+                '                html += "<div style=\\"font-size:14px;\\"><strong>Date:</strong> " + cm.overpaymentDate + "</div>";' +
+                '                html += "</div>";' +
+                '                html += "</div>";' +
+                '            }' +
+                '            ' +
+                '            /* Variance Check Message */' +
+                '            if (varianceMatchesCMs) {' +
+                '                html += "<div style=\\"margin-top:12px;padding:10px;background:#d4edda;border:1px solid #c3e6cb;border-radius:4px;color:#155724;text-align:center;font-size:14px;\\"><span style=\\"font-size:16px;\\">✓</span> Overpayment variance matches credit memo total</div>";' +
+                '            } else {' +
+                '                var difference = Math.abs(so.overpaymentVariance - totalCMsForSO);' +
+                '                html += "<div style=\\"margin-top:12px;padding:10px;background:#fff3cd;border:1px solid #ffc107;border-radius:4px;color:#856404;text-align:center;font-size:14px;\\"><strong>⚠️ Note:</strong> CM total (" + formatCompCurrency(totalCMsForSO) + ") differs from variance by " + formatCompCurrency(difference) + "</div>";' +
+                '            }' +
+                '            ' +
+                '            html += "</div>";' +
+                '            html += "</div>";' +
+                '        }' +
+                '    } else {' +
+                '        html += "<div style=\\"padding:20px;text-align:center;color:#6c757d;\\">No overpayment credit memos found.</div>";' +
                 '    }' +
                 '    ' +
                 '    body.innerHTML = html;' +
@@ -2492,7 +2927,6 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '            if (response.success && response.aiAnalysis && response.aiAnalysis.found) {' +
                 '                var data = response.aiAnalysis;' +
                 '                var displayData = {' +
-                '                    aiDecision: data.aiDecision,' +
                 '                    haikuResponse: data.haikuResponse,' +
                 '                    savedRecordId: data.recordId,' +
                 '                    createdDate: data.createdDate' +
@@ -2564,12 +2998,12 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '/* Render AI Analysis Result */' +
                 'function renderAIAnalysisResult(data) {' +
                 '    /* Legacy function - now redirects to Tab 3 */' +
-                '    renderTab3Result(data);' +
+                '    renderTab4Result(data);' +
                 '}' +
                 '' +
-                '/* Render Tab 3: AI Analysis Result */' +
-                'function renderTab3Result(data) {' +
-                '    var body = document.getElementById("tab-content-3");' +
+                '/* Render Tab 4: AI Analysis Result */' +
+                'function renderTab4Result(data) {' +
+                '    var body = document.getElementById("tab-content-4");' +
                 '    if (!body) return;' +
                 '    ' +
                 '    if (data.error) {' +
@@ -2578,23 +3012,9 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    }' +
                 '    ' +
                 '    var html = "";' +
-                '    var decision = data.aiDecision || "UNKNOWN";' +
-                '    var decisionClass = decision === "CONFIRMED" ? "success" : (decision === "NOT CONFIRMED" ? "error" : "warning");' +
-                '    var decisionBg = decision === "CONFIRMED" ? "#e8f5e9" : (decision === "NOT CONFIRMED" ? "#ffebee" : "#fff3e0");' +
-                '    var decisionBorder = decision === "CONFIRMED" ? "#4caf50" : (decision === "NOT CONFIRMED" ? "#d32f2f" : "#f57c00");' +
-                '    var decisionIcon = decision === "CONFIRMED" ? "\u2713" : (decision === "NOT CONFIRMED" ? "\u2717" : "?");' +
-                '    ' +
-                '    html += "<div style=\\"padding:15px;background:" + decisionBg + ";border:2px solid " + decisionBorder + ";border-radius:6px;margin-bottom:15px;\\">" ;' +
-                '    html += "<div style=\\"font-size:16px;font-weight:700;color:#333;\\">" + decisionIcon + " AI DECISION: " + decision + "</div>";' +
-                '    if (decision === "CONFIRMED") {' +
-                '        html += "<div style=\\"margin-top:5px;font-size:13px;color:#555;\\">Sales Order changes explain the overpayment credit memo.</div>";' +
-                '    } else if (decision === "NOT CONFIRMED") {' +
-                '        html += "<div style=\\"margin-top:5px;font-size:13px;color:#555;\\">Sales Order changes do NOT explain the overpayment. Investigate other sources.</div>";' +
-                '    }' +
-                '    html += "</div>";' +
                 '    ' +
                 '    html += "<div style=\\"background:white;padding:20px;border:1px solid #ddd;border-radius:6px;\\">" ;' +
-                '    html += "<h3 style=\\"margin:0 0 15px 0;font-size:16px;color:#7c4dff;\\\">\ud83e\udd16 AI Forensic Analysis</h3>";' +
+                '    html += "<h3 style=\\"margin:0 0 15px 0;font-size:16px;color:#7c4dff;\\">\ud83e\udd16 AI Generated SO Price Changes</h3>";' +
                 '    ' +
                 '    var responseText = data.haikuResponse || "No response received";' +
                 '    ' +
@@ -2616,6 +3036,60 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    html += "</div>";' +
                 '    ' +
                 '    body.innerHTML = html;' +
+                '}' +
+                '' +
+                '/* Render Tab 4 with Re-Run Button */' +
+                'function renderTab4ResultWithRerun(data) {' +
+                '    var body = document.getElementById("tab-content-4");' +
+                '    if (!body) return;' +
+                '    ' +
+                '    if (data.error) {' +
+                '        body.innerHTML = "<div class=\\"error-msg\\"><strong>Error:</strong> " + data.error + "</div>";' +
+                '        return;' +
+                '    }' +
+                '    ' +
+                '    var html = "";' +
+                '    ' +
+                '    /* Re-Run AI Generation Button at top */' +
+                '    html += "<div style=\\"margin-bottom:15px;\\\">";' +
+                '    html += "<button type=\\"button\\" id=\\"rerunAIBtn\\" onclick=\\"rerunAIGeneration()\\" style=\\"padding:10px 20px;font-size:14px;font-weight:700;color:#fff;background:linear-gradient(135deg,#7c4dff,#651fff);border:none;border-radius:6px;cursor:pointer;transition:all 0.2s;box-shadow:0 2px 4px rgba(124,77,255,0.3);\\">";' +
+                '    html += "🤖 Re-Run AI Generation</button>";' +
+                '    if (data.createdDate) {' +
+                '        html += "<span style=\\"margin-left:15px;font-size:12px;color:#777;\\">Last generated: " + data.createdDate + "</span>";' +
+                '    }' +
+                '    html += "</div>";' +
+                '    ' +
+                '    html += "<div style=\\"background:white;padding:20px;border:1px solid #ddd;border-radius:6px;\\">" ;' +
+                '    html += "<h3 style=\\"margin:0 0 15px 0;font-size:16px;color:#7c4dff;\\">\ud83e\udd16 AI Generated SO Price Changes</h3>";' +
+                '    ' +
+                '    var responseText = data.haikuResponse || "No response received";' +
+                '    ' +
+                '    html += "<div style=\\"white-space:pre-wrap;font-family:Arial,sans-serif;font-size:13px;line-height:1.6;color:#333;\\">" + escapeHtmlClient(responseText) + "</div>";' +
+                '    ' +
+                '    html += "<div style=\\"margin-top:15px;padding-top:15px;border-top:1px solid #ddd;font-size:12px;color:#777;\\">" ;' +
+                '    if (data.systemNotesCount !== undefined) {' +
+                '        html += "System Notes Analyzed: " + data.systemNotesCount + " | ";' +
+                '        html += "Financial: " + (data.organizedNotes && data.organizedNotes.financial ? data.organizedNotes.financial.length : 0) + " | ";' +
+                '        html += "Lifecycle: " + (data.organizedNotes && data.organizedNotes.lifecycle ? data.organizedNotes.lifecycle.length : 0);' +
+                '    }' +
+                '    if (data.savedRecordId) {' +
+                '        html += (data.systemNotesCount !== undefined ? " | " : "") + "<span style=\\"color:#7c4dff;\\">Record ID: " + data.savedRecordId + "</span>";' +
+                '    }' +
+                '    html += "</div>";' +
+                '    html += "</div>";' +
+                '    ' +
+                '    body.innerHTML = html;' +
+                '}' +
+                '' +
+                '/* Re-Run AI Generation */' +
+                'function rerunAIGeneration() {' +
+                '    var btn = document.getElementById("rerunAIBtn");' +
+                '    if (btn) {' +
+                '        btn.disabled = true;' +
+                '        btn.innerHTML = "⏳ Running AI Analysis...";' +
+                '        btn.style.background = "#999";' +
+                '    }' +
+                '    runTab4AIAnalysis();' +
                 '}' +
                 '' +
                 '/* Client-side HTML escape */' +
@@ -2641,15 +3115,18 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
          */
         function querySalesOrderLineItems(soInternalId) {
             try {
+                // Note: NetSuite stores SO line quantities/amounts as negative in transactionLine table
+                // Use ABS() to normalize for display and AI analysis
+                // Use netamount instead of amount (amount is not exposed in SuiteQL)
                 var sql = `
                     SELECT 
                         tl.id,
                         tl.linesequencenumber,
                         i.itemid,
                         i.displayname,
-                        tl.quantity,
+                        ABS(tl.quantity) AS quantity,
                         tl.rate,
-                        tl.amount
+                        ABS(tl.netamount) AS amount
                     FROM transactionLine tl
                     LEFT JOIN item i ON tl.item = i.id
                     WHERE tl.transaction = ` + soInternalId + `
@@ -2673,29 +3150,31 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
         /**
          * Query System Notes for a Sales Order to track transaction changes
          * @param {number} soInternalId - Sales Order internal ID
-         * @param {string} depositDate - Customer Deposit date (YYYY-MM-DD)
+         * @param {string} soCreationDate - Sales Order creation date (to capture initial "Set" values)
          * @param {string} overpaymentDate - Overpayment recognition date (YYYY-MM-DD)
          * @returns {Array} System Notes records
          */
-        function querySystemNotesForSO(soInternalId, depositDate, overpaymentDate) {
+        function querySystemNotesForSO(soInternalId, soCreationDate, overpaymentDate) {
             try {
-                // Convert M/D/YYYY to Date object for comparison
-                function parseNetSuiteDate(dateStr) {
+                // Convert dates from M/D/YYYY to YYYY-MM-DD for SQL
+                function formatDateForSQL(dateStr) {
                     if (!dateStr) return null;
                     var parts = dateStr.split('/');
                     if (parts.length === 3) {
-                        // parts[0] = month, parts[1] = day, parts[2] = year
-                        return new Date(parts[2], parts[0] - 1, parts[1]); // year, month (0-indexed), day
+                        var month = parts[0].padStart(2, '0');
+                        var day = parts[1].padStart(2, '0');
+                        var year = parts[2];
+                        return year + '-' + month + '-' + day;
                     }
                     return null;
                 }
 
-                var depositDateObj = parseNetSuiteDate(depositDate);
-                var overpaymentDateObj = parseNetSuiteDate(overpaymentDate);
+                var soDateSQL = formatDateForSQL(soCreationDate);
+                var overpaymentDateSQL = formatDateForSQL(overpaymentDate);
 
-                if (!depositDateObj || !overpaymentDateObj) {
-                    log.error('Invalid Dates', {
-                        depositDate: depositDate,
+                if (!soDateSQL || !overpaymentDateSQL) {
+                    log.error('Invalid Dates for SQL', {
+                        soCreationDate: soCreationDate,
                         overpaymentDate: overpaymentDate
                     });
                     return [];
@@ -2703,59 +3182,59 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
 
                 log.debug('System Notes Query Params', {
                     soInternalId: soInternalId,
-                    depositDate: depositDate,
-                    overpaymentDate: overpaymentDate,
-                    depositDateObj: depositDateObj.toISOString(),
-                    overpaymentDateObj: overpaymentDateObj.toISOString()
+                    soCreationDate: soDateSQL,
+                    overpaymentDate: overpaymentDateSQL
                 });
 
-                // Query ALL system notes for this SO (no date filter in SQL - we'll filter in JS)
+                // OPTIMIZED: Query only fields we care about with date filtering in SQL
+                // Focus on: Amount changes (MAMOUNT, RUNITPRICE, RQTY), Header total (MAMOUNTMAIN)
+                // Include WHO (employee), WHEN (date), WHAT (item via lineid + item name + description)
+                // Added RQTYSHIPRECV to track line-level fulfillment dates
+                // Added sn.type to distinguish "Set" (initial value) vs "Change" (modification)
                 var sql = `
                     SELECT 
                         sn.id,
                         sn.date,
                         sn.field,
+                        sn.type,
                         sn.oldvalue,
                         sn.newvalue,
-                        sn.name,
+                        sn.name AS employee_id,
                         sn.lineid,
-                        sn.context,
-                        sn.recordtypeid,
-                        e.firstname || ' ' || e.lastname AS user_name
+                        e.firstname || ' ' || e.lastname AS user_name,
+                        i.itemid,
+                        i.displayname AS item_name,
+                        i.description AS item_description
                     FROM systemNote sn
                     LEFT JOIN employee e ON sn.name = e.id
+                    LEFT JOIN transactionLine tl ON sn.recordid = tl.transaction AND sn.lineid = tl.id
+                    LEFT JOIN item i ON tl.item = i.id
                     WHERE sn.recordid = ` + soInternalId + `
+                        AND sn.field IN (
+                            'TRANLINE.MAMOUNT',
+                            'TRANLINE.RUNITPRICE', 
+                            'TRANLINE.RQTY',
+                            'TRANLINE.RQTYSHIPRECV',
+                            'TRANDOC.MAMOUNTMAIN',
+                            'TRANDOC.KSTATUS'
+                        )
+                        AND sn.date BETWEEN TO_DATE('` + soDateSQL + `', 'YYYY-MM-DD') 
+                                        AND TO_DATE('` + overpaymentDateSQL + `', 'YYYY-MM-DD')
                     ORDER BY sn.date, sn.id
                 `;
 
                 var results = query.runSuiteQL({ query: sql }).asMappedResults();
                 
-                log.debug('System Notes Query - Total Found', {
+                log.debug('System Notes Query - Optimized Results', {
                     soId: soInternalId,
-                    totalFound: results.length
-                });
-
-                // Filter by date in JavaScript
-                var filteredResults = [];
-                for (var i = 0; i < results.length; i++) {
-                    var note = results[i];
-                    var noteDateObj = parseNetSuiteDate(note.date);
-                    
-                    if (noteDateObj && noteDateObj >= depositDateObj && noteDateObj <= overpaymentDateObj) {
-                        filteredResults.push(note);
-                    }
-                }
-                
-                log.debug('System Notes Query - Date Filtered', {
-                    beforeFilter: results.length,
-                    afterFilter: filteredResults.length,
-                    dateRange: depositDate + ' to ' + overpaymentDate,
-                    sampleFields: filteredResults.length > 0 ? filteredResults.slice(0, 10).map(function(r) { 
-                        return { date: r.date, field: r.field }; 
+                    totalFound: results.length,
+                    dateRange: soDateSQL + ' to ' + overpaymentDateSQL,
+                    sampleFields: results.length > 0 ? results.slice(0, 5).map(function(r) { 
+                        return { date: r.date, field: r.field, user: r.user_name }; 
                     }) : []
                 });
                 
-                return filteredResults;
+                return results;
 
             } catch (e) {
                 log.error('Error querying system notes', { error: e.message, soId: soInternalId });
@@ -2764,97 +3243,122 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
         }
 
         /**
-         * Organize and filter System Notes by tier (financial, lifecycle, scheduling, business, people)
-         * Excludes operational noise like fulfillment status, allocations, picks, packs
-         * @param {Array} rawSystemNotes - Raw system notes from query
-         * @returns {Object} Organized system notes by tier with meaningful changes only
+         * Organize and filter System Notes by tier (financial, lifecycle)
+         * OPTIMIZED: Since query now only returns relevant fields, categorization is simpler
+         * @param {Array} rawSystemNotes - Raw system notes from optimized query
+         * @returns {Object} Organized system notes by tier
          */
         function organizeSystemNotesByTier(rawSystemNotes) {
             var organized = {
                 financial: [],
-                lifecycle: [],
-                scheduling: [],
-                business: [],
-                people: [],
-                excluded: []
+                lifecycle: []
             };
 
-            // Define tier classifications
-            var tiers = {
-                financial: ['TRANLINE.MAMOUNT', 'TRANLINE.RUNITPRICE', 'TRANLINE.RQTY', 'TRANDOC.MAMOUNTMAIN', 'TRANLINE.FXAMOUNT'],
-                lifecycle: ['TRANDOC.KSTATUS', 'TRANDOC.KREVENUESTATUS'],
-                scheduling: ['TRANDOC.DSHIP', 'TRANLINE.DSHIP', 'TRANLINE.DREQUESTEDDATE', 'TRANDOC.DEXPECTEDSHIPDATE'],
-                business: ['TRANDOC.ENTITY', 'TRANDOC.KTERMS', 'TRANDOC.SADDR', 'TRANDOC.SSHIPADDR'],
-                // Exclude operational noise
-                exclude: ['TRANLINE.RQTYSHIPRECV', 'TRANLINE.RQTYPICKED', 'TRANLINE.RQTYPACKED', 'TRANLINE.RCOMMITTED', 
-                         'TRANLINE.RALLOCATED', 'TRANLINE.KLOCATION', 'TRANDOC.KSHIPPINGSTATUS', 'TRANDOC.KCLOSED',
-                         'TRANLINE.KCLOSED', 'TRANLINE.KCOMMITTINGSTATUS', 'TRANLINE.KFULFILLMENTSTATUS']
-            };
+            // Temporary array for lifecycle notes before consolidation
+            var rawLifecycleNotes = [];
 
+            // Categorize the pre-filtered system notes
             for (var i = 0; i < rawSystemNotes.length; i++) {
                 var note = rawSystemNotes[i];
                 var field = note.field;
-                var placed = false;
 
-                // Check if excluded
-                for (var e = 0; e < tiers.exclude.length; e++) {
-                    if (field === tiers.exclude[e]) {
-                        organized.excluded.push(note);
-                        placed = true;
-                        break;
-                    }
+                // Financial fields (includes fulfillment for timing context)
+                if (field === 'TRANLINE.MAMOUNT' || field === 'TRANLINE.RUNITPRICE' || 
+                    field === 'TRANLINE.RQTY' || field === 'TRANLINE.RQTYSHIPRECV' ||
+                    field === 'TRANDOC.MAMOUNTMAIN') {
+                    organized.financial.push(note);
                 }
-                if (placed) continue;
-
-                // Check financial tier
-                for (var f = 0; f < tiers.financial.length; f++) {
-                    if (field === tiers.financial[f]) {
-                        organized.financial.push(note);
-                        placed = true;
-                        break;
-                    }
+                // Lifecycle fields - collect for consolidation
+                else if (field === 'TRANDOC.KSTATUS') {
+                    rawLifecycleNotes.push(note);
                 }
-                if (placed) continue;
-
-                // Check lifecycle tier
-                for (var l = 0; l < tiers.lifecycle.length; l++) {
-                    if (field === tiers.lifecycle[l]) {
-                        organized.lifecycle.push(note);
-                        placed = true;
-                        break;
-                    }
-                }
-                if (placed) continue;
-
-                // Check scheduling tier
-                for (var s = 0; s < tiers.scheduling.length; s++) {
-                    if (field === tiers.scheduling[s]) {
-                        organized.scheduling.push(note);
-                        placed = true;
-                        break;
-                    }
-                }
-                if (placed) continue;
-
-                // Check business tier
-                for (var b = 0; b < tiers.business.length; b++) {
-                    if (field === tiers.business[b]) {
-                        organized.business.push(note);
-                        placed = true;
-                        break;
-                    }
-                }
-                if (placed) continue;
-
-                // If not classified, include in people/other
-                organized.people.push(note);
             }
 
-            log.debug('System Notes Organized', 'Financial: ' + organized.financial.length + ', Lifecycle: ' + 
-                organized.lifecycle.length + ', Scheduling: ' + organized.scheduling.length + ', Business: ' + 
-                organized.business.length + ', People: ' + organized.people.length + ', Excluded: ' + organized.excluded.length);
+            // Consolidate lifecycle notes: combine sequential status changes on same date by same employee
+            // Example: Pending Fulfillment → Pending Billing → Partially Fulfilled (all on same date)
+            // becomes one entry showing the full chain
+            organized.lifecycle = consolidateStatusChanges(rawLifecycleNotes);
+
+            log.debug('System Notes Organized', 'Financial: ' + organized.financial.length + 
+                      ', Lifecycle: ' + organized.lifecycle.length + ' (from ' + rawLifecycleNotes.length + ' raw)' +
+                      ' (Total: ' + rawSystemNotes.length + ')');
 
             return organized;
+        }
+
+        /**
+         * Consolidate sequential status changes on the same date by the same employee
+         * into a single entry showing the full status progression chain
+         * @param {Array} statusNotes - Raw status change notes
+         * @returns {Array} Consolidated status notes with chain property
+         */
+        function consolidateStatusChanges(statusNotes) {
+            if (!statusNotes || statusNotes.length === 0) return [];
+
+            // Group by date + employee
+            var groups = {};
+            for (var i = 0; i < statusNotes.length; i++) {
+                var note = statusNotes[i];
+                var key = note.date + '|' + (note.user_name || note.employee_id || 'Unknown');
+                
+                if (!groups[key]) {
+                    groups[key] = [];
+                }
+                groups[key].push(note);
+            }
+
+            var consolidated = [];
+
+            // Process each group
+            for (var groupKey in groups) {
+                var groupNotes = groups[groupKey];
+                
+                if (groupNotes.length === 1) {
+                    // Single note, no consolidation needed
+                    consolidated.push(groupNotes[0]);
+                } else {
+                    // Multiple notes on same date by same employee - build chain
+                    // Sort by id to maintain chronological order within the day
+                    groupNotes.sort(function(a, b) {
+                        return parseInt(a.id, 10) - parseInt(b.id, 10);
+                    });
+
+                    // Build the status chain: first oldvalue → intermediate newvalues → final newvalue
+                    var chain = [];
+                    chain.push(groupNotes[0].oldvalue || 'Unknown');
+                    
+                    for (var j = 0; j < groupNotes.length; j++) {
+                        chain.push(groupNotes[j].newvalue);
+                    }
+
+                    // Create consolidated note using first note as base
+                    var consolidatedNote = {
+                        id: groupNotes[0].id,
+                        date: groupNotes[0].date,
+                        field: groupNotes[0].field,
+                        type: groupNotes[0].type,
+                        oldvalue: groupNotes[0].oldvalue,
+                        newvalue: groupNotes[groupNotes.length - 1].newvalue,
+                        employee_id: groupNotes[0].employee_id,
+                        user_name: groupNotes[0].user_name,
+                        // Custom property: full status chain for display
+                        statusChain: chain,
+                        consolidatedCount: groupNotes.length
+                    };
+
+                    consolidated.push(consolidatedNote);
+                }
+            }
+
+            // Sort consolidated results by date, then by id
+            consolidated.sort(function(a, b) {
+                if (a.date !== b.date) {
+                    return new Date(a.date) - new Date(b.date);
+                }
+                return parseInt(a.id, 10) - parseInt(b.id, 10);
+            });
+
+            return consolidated;
         }
 
         /**
@@ -2862,71 +3366,60 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
          * @returns {string} System prompt
          */
         function buildTransactionLifecycleSystemPrompt() {
-            return 'You are a forensic accounting analyst examining a NetSuite sales order transaction lifecycle to determine if changes to the order explain an overpayment credit memo.\n\n' +
-                'BUSINESS CONTEXT:\n' +
-                '- Customer: Kitchen Works (custom kitchen cabinets, complex multi-SO projects)\n' +
-                '- Typical Issue: Customer deposits paid upfront, then Sales Order changes occur (price adjustments, quantity changes, cancellations)\n' +
-                '- When SO total decreases after deposit paid, system recognizes overpayment and creates Credit Memo\n' +
-                '- Migration Date: 4/30/2024 - Data before this date may contain migration artifacts and should be considered less reliable\n\n' +
-                'YOUR TASK:\n' +
-                'Analyze the provided Sales Order System Notes to determine if transaction changes explain the Credit Memo overpayment.\n\n' +
-                'ANALYSIS APPROACH:\n' +
-                '1. Focus on FINANCIAL changes: line amounts (TRANLINE.MAMOUNT), unit prices (TRANLINE.RUNITPRICE), quantities (TRANLINE.RQTY), header totals (TRANDOC.MAMOUNTMAIN)\n' +
-                '2. Consider LIFECYCLE changes: order status (TRANDOC.KSTATUS), revenue recognition status (TRANDOC.KREVENUESTATUS)\n' +
-                '3. Note SCHEDULING changes if relevant: ship dates (DSHIP), requested dates (DREQUESTEDDATE)\n' +
-                '4. Evaluate BUSINESS changes: customer (ENTITY), payment terms (KTERMS), shipping address (SADDR)\n' +
-                '5. Track WHO made changes and WHEN - cite specific employee names and dates\n' +
-                '6. Calculate net financial impact: Did SO total decrease by approximately the CM amount?\n\n' +
-                'CRITICAL REQUIREMENTS:\n' +
-                '- ALWAYS start with a narrative paragraph explaining your findings in plain English\n' +
-                '- For line-level changes (TRANLINE.MAMOUNT, TRANLINE.RUNITPRICE, TRANLINE.RQTY), describe WHAT changed even if item names are not available\n' +
-                '- Track EVERY financial change chronologically with: Date, Person, Field, Old Value → New Value, Net Impact\n' +
-                '- Calculate the EXACT net change from all TRANDOC.MAMOUNTMAIN entries\n' +
-                '- Compare net change to CM amount - if difference > $100, explain the discrepancy\n' +
-                '- Be FACTUAL and DETAILED - cite specific dollar amounts, dates, and names\n' +
-                '- Do NOT dismiss large discrepancies as "small" - quantify and explain\n\n' +
-                'OUTPUT FORMAT:\n' +
-                'Start with: EXECUTIVE SUMMARY - A 2-3 sentence narrative explaining what you found and whether SO changes explain the CM.\n\n' +
-                'Then provide these sections:\n' +
-                '1. DECISION: ---DECISION--- CONFIRMED ---END--- or ---DECISION--- NOT CONFIRMED ---END---\n' +
-                '   STRICT CRITERIA:\n' +
-                '   - CONFIRMED = Net SO decrease matches CM amount within $0.01 tolerance (rounding only)\n' +
-                '   - NOT CONFIRMED = Variance > $0.01, or no decrease found, or any unexplained discrepancy\n' +
-                '   - The SO changes must EXACTLY explain the CM amount - even $1+ variance means NOT CONFIRMED\n' +
-                '   - If variance exists, the data may still be helpful but the answer is NOT CONFIRMED\n\n' +
-                '2. FINANCIAL RECONCILIATION:\n' +
-                '   - Initial SO Total: $X (date, by whom)\n' +
-                '   - Final SO Total: $Y (date, by whom)\n' +
-                '   - Net Change: $(X-Y) [DECREASE] or $(Y-X) [INCREASE]\n' +
-                '   - Credit Memo Amount: $Z\n' +
-                '   - Variance: $(|Net Change - CM|)\n' +
-                '   - VARIANCE EXPLANATION: If variance > $0.01, explain the discrepancy. Provide theories: multiple invoices? partial billing? contract adjustments? other transactions?\n\n' +
-                '3. LINE-LEVEL CHANGES (if any TRANLINE changes):\n' +
-                '   IMPORTANT: Use the lineid field to identify which item changed. Match lineid to Line ID in current items list.\n' +
-                '   Format: Date, User, Line ID X (Item Name), Field, Old → New, Impact\n' +
-                '   Example: "7/12/2024: Michael Strange changed Line ID 3 (Installation Labor) price $295.00 → $395.80 (+$100.80)"\n' +
-                '   \n' +
-                '   CRITICAL PATTERN TO DETECT - LINE DELETIONS:\n' +
-                '   If TRANDOC.MAMOUNTMAIN decreased significantly but you see NO or MINIMAL TRANLINE changes:\n' +
-                '   - This indicates LINE ITEMS WERE DELETED from the Sales Order\n' +
-                '   - NetSuite does NOT record individual line deletions in system notes\n' +
-                '   - State: "LINE DELETION DETECTED: SO total decreased by $X but only $Y in line changes found. Missing $Z suggests items were removed."\n' +
-                '   - Mark this as a DATA QUALITY LIMITATION in your analysis\n\n' +
-                '4. CHRONOLOGICAL TIMELINE:\n' +
-                '   CRITICAL: ALWAYS include WHO made each change. Every entry must show the person responsible.\n' +
-                '   Format: Date: Action by [User Name]\n' +
-                '   Example:\n' +
-                '   - 5/15/2024: Sales Order Created by Michael Strange\n' +
-                '   - 6/21/2024: Customer Deposit ($7,114.36) by Automated System\n' +
-                '   - 7/12/2024: SO Total Reduced to $25,078.64 by Michael Strange\n' +
-                '   - 10/04/2024: Shipping Dates Adjusted by Lizabeth Lopez\n' +
-                '   - 12/15/2024: Order Marked "Billed" by Lizabeth Lopez\n' +
-                '   - 12/13/2025: Credit Memo Generated ($704.25) by System\n\n' +
-                '5. KEY CONTACTS:\n' +
-                '   - Name: Role/Actions (summarize their involvement)\n\n' +
-                '6. DATA QUALITY NOTES:\n' +
-                '   - Migration date issues, missing data, anomalies\n\n' +
-                'Remember: Start with the executive summary narrative, then provide structured detail.';
+            return 'You are a Sales Order change analyst. Analyze and narrate order modifications clearly based on observed facts.\n\n' +
+                'DATA YOU WILL RECEIVE:\n' +
+                '- TRANLINE.MAMOUNT: Line item dollar amount\n' +
+                '- TRANLINE.RUNITPRICE: Line item unit price\n' +
+                '- TRANLINE.RQTY: Line item quantity\n' +
+                '- TRANLINE.RQTYSHIPRECV: Line fulfillment (0→1 = shipped)\n' +
+                '- TRANDOC.MAMOUNTMAIN: Header-level order total\n' +
+                '- TRANDOC.KSTATUS: Order status changes\n' +
+                '- Each record includes: type, date, user_name, itemid, item_name, item_description\n\n' +
+                'TYPE FIELD VALUES:\n' +
+                '- SET = INITIAL VALUE when order/line was created (no oldvalue)\n' +
+                '- EDIT = intermediate value entry\n' +
+                '- CHANGE = documented modification from old to new value\n\n' +
+                'CRITICAL PRINCIPLES:\n\n' +
+                '1. REPORT OBSERVED FACTS ONLY\n' +
+                '   - State what the audit trail shows\n' +
+                '   - Do NOT infer causes (change orders, phase additions, deletions)\n' +
+                '   - Do NOT say "probably," "likely," or "may indicate"\n\n' +
+                '2. FLAG DISCREPANCIES, DON\'T EXPLAIN THEM\n' +
+                '   - Point out mismatches (fulfillment count vs value changes)\n' +
+                '   - Report timing gaps (fulfilled before priced)\n' +
+                '   - Do NOT propose explanations for why\n\n' +
+                '3. POST-FULFILLMENT CHANGES (CRITICAL)\n' +
+                '   - If item was fulfilled THEN value changed = ⚠️ FLAG IMMEDIATELY\n' +
+                '   - Invoice was created at fulfillment; current SO may differ\n' +
+                '   - This MUST be in SUMMARY, not buried\n\n' +
+                'FORMATTING RULES:\n' +
+                '- ALWAYS include item_description with itemid: "Item 101954723-03 (Omega Renner Maple Beach house)"\n' +
+                '- ALWAYS use user_name, never employee_id\n' +
+                '- CONSOLIDATE: When MAMOUNT and RUNITPRICE change same amount on same date, report ONCE\n' +
+                '- STATUS CHANGES must include DATE and WHO\n\n' +
+                'OUTPUT FORMAT:\n\n' +
+                'SUMMARY:\n' +
+                '2-3 sentences. If post-fulfillment changes detected, lead with:\n' +
+                '"⚠️ POST-FULFILLMENT VALUE CHANGE: [itemid] ([description]) was fulfilled [date] but value changed [later date]. Invoice may not match current SO."\n' +
+                'If none: "✓ No post-fulfillment value changes detected. [Brief order summary]."\n\n' +
+                'ORDER TOTAL CHANGES:\n' +
+                '• [date] ([employee]): Initial $X (SET)\n' +
+                '• [date] ([employee]): $X → $Y\n' +
+                '• Current Total: $Z\n\n' +
+                'LINE ITEM CHANGES:\n' +
+                'Only items with value changes:\n' +
+                '• [itemid] ([description]):\n' +
+                '  - Fulfilled: [date] by [employee]\n' +
+                '  - Value: $X → $Y on [date] by [employee]\n' +
+                '  - ⚠️ [FLAG if fulfilled before value change]\n\n' +
+                'STATUS CHANGES:\n' +
+                '• [date] ([employee]): [old] → [new]\n\n' +
+                'OBSERVATIONS:\n' +
+                'Report discrepancies without interpretation:\n' +
+                '• [X] items fulfilled, [Y] items with documented value changes\n' +
+                '• Any timing gaps between fulfillment and pricing\n' +
+                '• Order total changes without corresponding line changes\n\n' +
+                'IMPORTANT: Do NOT include any decision or recommendation. Report only the facts and observations.';
         }
 
         /**
@@ -2939,126 +3432,134 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
             var cd = context.customerDeposit;
             var so = context.salesOrder;
             var organizedNotes = context.organizedNotes;
-            var currentLineItems = context.currentLineItems || [];
-            var comparisonData = context.comparisonData || {};
 
-            var prompt = 'TRANSACTION DETAILS:\n';
-            prompt += 'Credit Memo: ' + cm.tranid + ' (' + cm.trandate + ') Amount: $' + cm.amount.toFixed(2) + '\n';
-            prompt += 'Customer Deposit: ' + cd.tranid + ' (' + cd.trandate + ') Amount: $' + cd.amount.toFixed(2) + '\n';
-            prompt += 'Sales Order: ' + so.tranid + ' (' + so.trandate + ') Current Total: $' + so.amount.toFixed(2) + ' Status: ' + so.statusText + '\n';
-            prompt += 'Deposit Date: ' + cd.trandate + '\n';
-            prompt += 'Overpayment Recognition Date: ' + (cm.trandate || 'Unknown') + '\n\n';
+            var prompt = 'SALES ORDER: ' + so.tranid + '\n';
+            prompt += 'Order Date: ' + so.trandate + '\n';
+            prompt += 'Current Total: $' + so.amount.toFixed(2) + '\n';
+            prompt += 'Status: ' + so.statusText + '\n\n';
 
-            // Add current line items for context
-            if (currentLineItems.length > 0) {
-                prompt += 'CURRENT SALES ORDER LINE ITEMS:\n';
-                prompt += 'Use this to identify WHICH ITEM changed when you see a system note with a lineid:\n';
-                for (var i = 0; i < currentLineItems.length; i++) {
-                    var line = currentLineItems[i];
-                    var itemName = line.displayname || line.itemid || 'Unknown Item';
-                    prompt += 'Line ID ' + line.id + ': Item ' + itemName;
-                    prompt += ' (Seq: ' + line.linesequencenumber + ')';
-                    prompt += ' | Qty: ' + (line.quantity || 0) + ' | Rate: $' + (line.rate || 0);
-                    prompt += ' | Amount: $' + (line.amount || 0) + '\n';
-                }
-                prompt += '\nCRITICAL MATCHING RULE:\n';
-                prompt += 'When a system note has field "TRANLINE.*" and includes a "lineid" value, match that lineid to the Line ID above.\n';
-                prompt += 'Example: System note with lineid="3" means it changed Line ID 3 above.\n';
-                prompt += 'ALWAYS reference the item name/number in your LINE-LEVEL CHANGES section.\n';
-                prompt += 'Format: "Line ID 3 (Item 00229)" or "Line ID 5 (Item Kitchen Cabinet Door)"\n\n';
+            // Format system notes in readable text format (not JSON)
+            prompt += 'SYSTEM NOTES:\n';
+            prompt += 'Below are the meaningful changes to this order. Each note includes:\n';
+            prompt += '- type: "Set" = INITIAL VALUE when order created, "Change" = MODIFICATION from old to new\n';
+            prompt += '- item_name/itemid: The specific item (for line-level changes)\n';
+            prompt += '- user_name: The employee who made the change\n';
+            prompt += '- date, field, oldvalue, newvalue\n';
+            prompt += 'IMPORTANT: "Set" entries show the STARTING values. No oldvalue means this was the original value.\n\n';
+
+            // Helper function to map NetSuite type IDs to text
+            // Type 1 = Set (initial value), Type 4 = Change, Type 2 = Edit/intermediate
+            function mapTypeToText(typeId) {
+                var typeNum = parseInt(typeId, 10);
+                if (typeNum === 1) return 'SET';
+                if (typeNum === 4) return 'CHANGE';
+                if (typeNum === 2) return 'EDIT';
+                return 'CHANGE'; // Default to CHANGE for unknown types
             }
 
-            // Add comparison tool findings context
-            if (comparisonData.mismatchVariance !== undefined) {
-                var mismatchAbs = Math.abs(comparisonData.mismatchVariance || 0);
-                var cmAmount = cm.amount;
-                var difference = Math.abs(mismatchAbs - cmAmount);
-                
-                prompt += 'SO-TO-INVOICE COMPARISON TOOL FINDINGS:\n';
-                prompt += 'Mismatch Variance (SO vs Invoice line item errors): $' + mismatchAbs.toFixed(2) + '\n';
-                prompt += 'Credit Memo Amount: $' + cmAmount.toFixed(2) + '\n';
-                
-                if (difference < 0.10) {
-                    // Perfect match - shouldn't see AI button, but if here somehow...
-                    prompt += 'Analysis: Mismatch EXACTLY explains CM (variance matches within $0.10)\n';
-                    prompt += 'AI GUIDANCE: This case is already resolved by comparison tool. Confirm SO changes align with mismatch findings.\n\n';
-                } else if (mismatchAbs > 0.01 && mismatchAbs < cmAmount) {
-                    // Partial match
-                    var unexplained = cmAmount - mismatchAbs;
-                    prompt += 'Analysis: PARTIAL MATCH - Mismatch explains $' + mismatchAbs.toFixed(2) + ' but $' + unexplained.toFixed(2) + ' remains unexplained\n';
-                    prompt += 'AI GUIDANCE: Focus on explaining the $' + unexplained.toFixed(2) + ' unexplained amount. Look for SO changes NOT captured in line item mismatch.\n\n';
-                } else if (mismatchAbs < 0.01) {
-                    // No mismatch
-                    prompt += 'Analysis: NO MISMATCH found in SO vs Invoice line items ($' + mismatchAbs.toFixed(2) + ')\n';
-                    prompt += 'AI GUIDANCE: Analyze full CM amount ($' + cmAmount.toFixed(2) + '). Look for header-level changes, cancellations, or other factors not visible in line items.\n\n';
+            // Separate and format by type
+            var financialNotes = organizedNotes.financial || [];
+            var lifecycleNotes = organizedNotes.lifecycle || [];
+
+            // Group financial notes by type for clarity
+            var headerChanges = [];
+            var lineAmountChanges = [];
+            var fulfillmentChanges = [];
+
+            for (var i = 0; i < financialNotes.length; i++) {
+                var note = financialNotes[i];
+                if (note.field === 'TRANDOC.MAMOUNTMAIN') {
+                    headerChanges.push(note);
+                } else if (note.field === 'TRANLINE.RQTYSHIPRECV') {
+                    fulfillmentChanges.push(note);
                 } else {
-                    // Excess mismatch
-                    var excess = mismatchAbs - cmAmount;
-                    prompt += 'Analysis: EXCESS MISMATCH - Variance ($' + mismatchAbs.toFixed(2) + ') exceeds CM ($' + cmAmount.toFixed(2) + ') by $' + excess.toFixed(2) + '\n';
-                    prompt += 'AI GUIDANCE: Complex scenario. Determine if SO changes explain CM, or if mismatch includes unrelated billing errors.\n\n';
+                    lineAmountChanges.push(note);
                 }
             }
 
-            prompt += 'SALES ORDER SYSTEM NOTES (FILTERED FOR MEANINGFUL CHANGES):\n\n';
-
-            // Financial changes (highest priority)
-            if (organizedNotes.financial.length > 0) {
-                prompt += '=== FINANCIAL CHANGES (Tier 1 - Critical) ===\n';
-                prompt += JSON.stringify(organizedNotes.financial, null, 2) + '\n\n';
-            } else {
-                prompt += '=== FINANCIAL CHANGES (Tier 1 - Critical) ===\nNone found.\n\n';
+            // Header total changes
+            if (headerChanges.length > 0) {
+                prompt += '=== ORDER TOTAL CHANGES ===\n';
+                for (var h = 0; h < headerChanges.length; h++) {
+                    var hdr = headerChanges[h];
+                    var changeType = mapTypeToText(hdr.type);
+                    prompt += hdr.date + ' | ' + changeType + ' | ' + (hdr.user_name || 'Unknown') + ' | ';
+                    if (changeType === 'SET') {
+                        prompt += 'INITIAL VALUE: $' + hdr.newvalue + '\n';
+                    } else {
+                        prompt += '$' + (hdr.oldvalue || '0') + ' → $' + hdr.newvalue + '\n';
+                    }
+                }
+                prompt += '\n';
             }
 
-            // Lifecycle changes
-            if (organizedNotes.lifecycle.length > 0) {
-                prompt += '=== LIFECYCLE CHANGES (Tier 2) ===\n';
-                prompt += JSON.stringify(organizedNotes.lifecycle, null, 2) + '\n\n';
-            } else {
-                prompt += '=== LIFECYCLE CHANGES (Tier 2) ===\nNone found.\n\n';
+            // Line fulfillments (important for timing context)
+            if (fulfillmentChanges.length > 0) {
+                prompt += '=== LINE FULFILLMENTS ===\n';
+                prompt += '(RQTYSHIPRECV 0→1 means item was shipped/fulfilled)\n';
+                for (var f = 0; f < fulfillmentChanges.length; f++) {
+                    var ful = fulfillmentChanges[f];
+                    var itemRef = ful.item_name || ful.itemid || 'Unknown';
+                    var itemDesc = ful.item_description ? ' (' + ful.item_description + ')' : '';
+                    var changeType = mapTypeToText(ful.type);
+                    prompt += ful.date + ' | ' + changeType + ' | ' + (ful.user_name || 'Unknown') + ' | ';
+                    prompt += 'Item: ' + itemRef + itemDesc + ' | ';
+                    prompt += 'Qty Shipped: ' + (ful.oldvalue || '0') + ' → ' + ful.newvalue + '\n';
+                }
+                prompt += '\n';
             }
 
-            // Scheduling changes
-            if (organizedNotes.scheduling.length > 0) {
-                prompt += '=== SCHEDULING CHANGES (Tier 3) ===\n';
-                prompt += JSON.stringify(organizedNotes.scheduling, null, 2) + '\n\n';
+            // Line amount/price/qty changes (most critical)
+            if (lineAmountChanges.length > 0) {
+                prompt += '=== LINE ITEM VALUE CHANGES ===\n';
+                prompt += '(Amount, Price, or Quantity changes on specific items)\n';
+                prompt += '(SET = initial value when line added, CHANGE = modification)\n';
+                for (var l = 0; l < lineAmountChanges.length; l++) {
+                    var line = lineAmountChanges[l];
+                    var itemName = line.item_name || line.itemid || 'Unknown';
+                    var itemDesc = line.item_description ? ' (' + line.item_description + ')' : '';
+                    var fieldType = line.field.replace('TRANLINE.', '');
+                    var changeType = mapTypeToText(line.type);
+                    prompt += line.date + ' | ' + changeType + ' | ' + (line.user_name || 'Unknown') + ' | ';
+                    prompt += 'Item: ' + itemName + itemDesc + ' | ';
+                    if (changeType === 'SET') {
+                        prompt += fieldType + ' INITIAL: $' + line.newvalue + '\n';
+                    } else {
+                        prompt += fieldType + ': $' + (line.oldvalue || '0') + ' → $' + line.newvalue + '\n';
+                    }
+                }
+                prompt += '\n';
             }
 
-            // Business changes
-            if (organizedNotes.business.length > 0) {
-                prompt += '=== BUSINESS CHANGES (Tier 4) ===\n';
-                prompt += JSON.stringify(organizedNotes.business, null, 2) + '\n\n';
+            // Status changes (consolidated - multiple changes on same date shown as chain)
+            if (lifecycleNotes.length > 0) {
+                prompt += '=== STATUS CHANGES ===\n';
+                prompt += '(Status transitions on same date by same employee shown as full chain)\n';
+                for (var s = 0; s < lifecycleNotes.length; s++) {
+                    var stat = lifecycleNotes[s];
+                    var changeType = mapTypeToText(stat.type);
+                    prompt += stat.date + ' | ' + changeType + ' | ' + (stat.user_name || 'Unknown') + ' | ';
+                    
+                    // Check if this is a consolidated entry with a status chain
+                    if (stat.statusChain && stat.statusChain.length > 2) {
+                        // Full chain: Pending Fulfillment → Pending Billing → Partially Fulfilled
+                        prompt += stat.statusChain.join(' → ') + '\n';
+                    } else if (changeType === 'SET') {
+                        prompt += 'INITIAL STATUS: ' + stat.newvalue + '\n';
+                    } else {
+                        prompt += (stat.oldvalue || 'Unknown') + ' → ' + stat.newvalue + '\n';
+                    }
+                }
+                prompt += '\n';
             }
 
-            // People/other
-            if (organizedNotes.people.length > 0) {
-                prompt += '=== OTHER CHANGES (Tier 5) ===\n';
-                prompt += JSON.stringify(organizedNotes.people, null, 2) + '\n\n';
-            }
-
-            prompt += 'TOTAL SYSTEM NOTES ANALYZED: ' + (organizedNotes.financial.length + organizedNotes.lifecycle.length + 
-                organizedNotes.scheduling.length + organizedNotes.business.length + organizedNotes.people.length) + '\n';
-            prompt += 'EXCLUDED (operational noise): ' + organizedNotes.excluded.length + '\n\n';
-
-            prompt += 'Based on this data, provide your forensic analysis following the output format specified in your system prompt.';
+            prompt += 'TOTAL NOTES: ' + (financialNotes.length + lifecycleNotes.length) + '\n\n';
+            prompt += 'Please analyze these changes and provide your summary following the output format.';
 
             return prompt;
         }
 
-        /**
-         * Parse AI decision from Haiku response
-         * @param {string} haikuResponse - Claude Haiku response text
-         * @returns {string} "CONFIRMED" or "NOT CONFIRMED" or "UNKNOWN"
-         */
-        function parseAIDecision(haikuResponse) {
-            if (!haikuResponse) return 'UNKNOWN';
-            
-            var decisionMatch = haikuResponse.match(/---DECISION---\s*(CONFIRMED|NOT CONFIRMED)\s*---END---/i);
-            if (decisionMatch && decisionMatch[1]) {
-                return decisionMatch[1].toUpperCase().trim();
-            }
-            
-            return 'UNKNOWN';
-        }
+        // parseAIDecision function removed - we now provide narrative only, no decision
 
         /**
          * Save AI analysis to custom record
@@ -3092,10 +3593,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                     value: params.systemPrompt ? params.systemPrompt.substring(0, 9999) : ''
                 });
 
-                aiRecord.setValue({
-                    fieldId: 'custrecord_ai_decision',
-                    value: params.aiDecision
-                });
+                // aiDecision field no longer saved - we provide narrative only
 
                 var recordId = aiRecord.save();
                 log.debug('AI Analysis Saved', 'Custom record ID: ' + recordId);
@@ -3122,13 +3620,13 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                     columns: [
                         'internalid',
                         'custrecord_haiku_response',
-                        'custrecord_ai_decision',
                         'custrecord_user_prompt',
                         'custrecord_system_prompt',
-                        'created'
+                        search.createColumn({ name: 'created', sort: search.Sort.DESC })
                     ]
                 });
 
+                // Get the most recent record (sorted by created date DESC)
                 var results = aiSearch.run().getRange({ start: 0, end: 1 });
 
                 if (results && results.length > 0) {
@@ -3139,7 +3637,6 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                         found: true,
                         recordId: result.id,
                         haikuResponse: result.getValue('custrecord_haiku_response'),
-                        aiDecision: result.getValue('custrecord_ai_decision'),
                         userPrompt: result.getValue('custrecord_user_prompt'),
                         systemPrompt: result.getValue('custrecord_system_prompt'),
                         createdDate: result.getValue('created')
@@ -3226,8 +3723,8 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                     return { error: 'Sales Order not found', creditMemo: cmData };
                 }
 
-                // Query System Notes for SO
-                var rawSystemNotes = querySystemNotesForSO(cdData.soId, cdData.trandate, cmData.trandate);
+                // Query System Notes for SO - use SO creation date to capture initial "Set" values
+                var rawSystemNotes = querySystemNotesForSO(cdData.soId, soData.trandate, cmData.trandate);
                 
                 // Query current SO line items for context
                 var currentLineItems = querySalesOrderLineItems(cdData.soId);
@@ -3269,22 +3766,19 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 }
 
                 var haikuResponse = claudeResponse.analysis;
-                var aiDecision = parseAIDecision(haikuResponse);
 
-                log.debug('AI Analysis Complete', 'Decision: ' + aiDecision);
+                log.debug('AI Analysis Complete', 'Response length: ' + (haikuResponse ? haikuResponse.length : 0));
 
-                // Save to custom record
+                // Save to custom record (no decision parsing - narrative only)
                 var savedRecordId = saveAIAnalysisToRecord({
                     creditMemoId: creditMemoId,
                     haikuResponse: haikuResponse,
                     userPrompt: userPrompt,
-                    systemPrompt: systemPrompt,
-                    aiDecision: aiDecision
+                    systemPrompt: systemPrompt
                 });
 
                 return {
                     success: true,
-                    aiDecision: aiDecision,
                     haikuResponse: haikuResponse,
                     systemNotesCount: rawSystemNotes.length,
                     organizedNotes: organizedNotes,
@@ -3766,6 +4260,144 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                     creditMemoId: creditMemoId
                 });
                 return { error: e.message, creditMemoId: creditMemoId };
+            }
+        }
+
+        /**
+         * Gets Overpayment Summary for all overpayment CMs on customer record
+         * @param {number} creditMemoId - Internal ID of source Credit Memo
+         * @returns {Object} Overpayment summary with calculations
+         */
+        function getOverpaymentSummary(creditMemoId) {
+            try {
+                log.debug('Overpayment Summary', 'Starting for CM ID: ' + creditMemoId);
+
+                // Step 1: Get customer from source Credit Memo
+                var cmRecord = record.load({
+                    type: record.Type.CREDIT_MEMO,
+                    id: creditMemoId
+                });
+                var customerId = cmRecord.getValue({ fieldId: 'entity' });
+                
+                log.debug('Customer Found', 'ID: ' + customerId);
+
+                // Step 2: Query all overpayment CMs for this customer
+                // Get SO via CD's createdfrom field since custbody_overpayment_linked_sales_orde isn't exposed for SuiteQL
+                var cmSql = `
+                    SELECT 
+                        cm.id as cm_id,
+                        cm.tranid as cm_number,
+                        ABS(cm.foreigntotal) as cm_amount,
+                        cm.custbody_overpayment_date as overpayment_date,
+                        cm.custbody_overpayment_tran as cd_id,
+                        cd.tranid as cd_number,
+                        tl_cd.createdfrom as so_id,
+                        so.tranid as so_number,
+                        ABS(so.foreigntotal) as so_total
+                    FROM transaction cm
+                    LEFT JOIN transaction cd ON cm.custbody_overpayment_tran = cd.id
+                    LEFT JOIN transactionline tl_cd ON cd.id = tl_cd.transaction AND tl_cd.mainline = 'T'
+                    LEFT JOIN transaction so ON tl_cd.createdfrom = so.id
+                    WHERE cm.type = 'CustCred'
+                      AND cm.entity = ` + customerId + `
+                      AND cm.custbody_overpayment_tran IS NOT NULL
+                    ORDER BY 
+                      CASE WHEN cm.id = ` + creditMemoId + ` THEN 0 ELSE 1 END,
+                      cm.trandate DESC
+                `;
+
+                var cmResults = query.runSuiteQL({ query: cmSql }).asMappedResults();
+                log.debug('Found CMs', cmResults.length + ' overpayment credit memos');
+
+                // Step 3: Group CMs by Sales Order and calculate totals
+                var soMap = {}; // Map of SO ID to SO data with CMs
+                var totalCMAmount = 0;
+
+                for (var i = 0; i < cmResults.length; i++) {
+                    var cm = cmResults[i];
+                    var soId = cm.so_id;
+                    var cmAmount = parseFloat(cm.cm_amount || 0);
+                    totalCMAmount += cmAmount;
+
+                    // Initialize SO in map if not exists
+                    if (!soMap[soId]) {
+                        // Get total deposits collected on this SO
+                        var depositsSql = `
+                            SELECT COALESCE(SUM(ABS(cd.foreigntotal)), 0) as total_deposits
+                            FROM transaction cd
+                            INNER JOIN transactionline tl ON cd.id = tl.transaction
+                            WHERE tl.createdfrom = ` + soId + `
+                              AND cd.type = 'CustDep'
+                              AND tl.mainline = 'T'
+                        `;
+                        var depositsResult = query.runSuiteQL({ query: depositsSql }).asMappedResults();
+                        var totalDeposits = parseFloat(depositsResult[0].total_deposits || 0);
+
+                        // Get total invoiced value from this SO
+                        var invoicesSql = `
+                            SELECT COALESCE(SUM(ABS(inv.foreigntotal)), 0) as total_invoiced
+                            FROM transaction inv
+                            INNER JOIN transactionline tl ON inv.id = tl.transaction
+                            WHERE tl.createdfrom = ` + soId + `
+                              AND inv.type = 'CustInvc'
+                              AND tl.mainline = 'T'
+                        `;
+                        var invoicesResult = query.runSuiteQL({ query: invoicesSql }).asMappedResults();
+                        var totalInvoiced = parseFloat(invoicesResult[0].total_invoiced || 0);
+
+                        soMap[soId] = {
+                            soId: soId,
+                            soNumber: cm.so_number,
+                            soTotal: parseFloat(cm.so_total || 0),
+                            totalDeposits: totalDeposits,
+                            totalInvoiced: totalInvoiced,
+                            overpaymentVariance: totalDeposits - totalInvoiced,
+                            creditMemos: []
+                        };
+                    }
+
+                    // Add CM to this SO's list
+                    soMap[soId].creditMemos.push({
+                        cmId: cm.cm_id,
+                        cmNumber: cm.cm_number,
+                        cmAmount: cmAmount,
+                        overpaymentDate: cm.overpayment_date || 'N/A',
+                        cdId: cm.cd_id,
+                        cdNumber: cm.cd_number,
+                        isSource: (cm.cm_id === creditMemoId)
+                    });
+                }
+
+                // Convert map to array
+                var salesOrders = [];
+                for (var soId in soMap) {
+                    if (soMap.hasOwnProperty(soId)) {
+                        salesOrders.push(soMap[soId]);
+                    }
+                }
+
+                // Sort: source CM's SO first
+                salesOrders.sort(function(a, b) {
+                    var aHasSource = a.creditMemos.some(function(cm) { return cm.isSource; });
+                    var bHasSource = b.creditMemos.some(function(cm) { return cm.isSource; });
+                    if (aHasSource && !bHasSource) return -1;
+                    if (!aHasSource && bHasSource) return 1;
+                    return 0;
+                });
+
+                return {
+                    salesOrders: salesOrders,
+                    totalCMCount: cmResults.length,
+                    totalCMAmount: totalCMAmount
+                };
+
+            } catch (e) {
+                log.error('Overpayment Summary Error', {
+                    error: e.message,
+                    stack: e.stack,
+                    creditMemoId: creditMemoId
+                });
+                return { error: e.message };
             }
         }
 
@@ -4448,6 +5080,248 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
             }
 
             return problemItems;
+        }
+
+        /**
+         * Gets comprehensive sales order summary for a customer from a Credit Memo
+         * @param {number} creditMemoId - Credit Memo internal ID
+         * @returns {Object} Sales order summary with customer name and all SOs
+         */
+        function getCustomerSalesOrdersSummary(creditMemoId) {
+            try {
+                // Step 1: Get customer ID from credit memo
+                var cmDetails = getCreditMemoDetails(creditMemoId);
+                if (!cmDetails || !cmDetails.customerId) {
+                    return { 
+                        error: 'Could not find customer for Credit Memo ID: ' + creditMemoId,
+                        customerName: null,
+                        salesOrders: [],
+                        summary: {}
+                    };
+                }
+                
+                var customerId = cmDetails.customerId;
+                var customerName = cmDetails.customerName;
+                
+                log.debug('SO Totals Query', 'Customer ID: ' + customerId + ', Name: ' + customerName);
+                
+                // Step 2: Query all sales orders for this customer using SuiteQL (identical to AI tool query)
+                var soQuerySQL = 
+                    "SELECT " +
+                    "    so.id, " +
+                    "    so.tranid, " +
+                    "    so.trandate, " +
+                    "    cust.altname as customer_name, " +
+                    "    so.foreigntotal as so_total_amount, " +
+                    "    COALESCE(inv_summary.total_billed, 0) as inv_total_billed, " +
+                    "    so.foreigntotal - COALESCE(inv_summary.total_billed, 0) as so_total_unbilled, " +
+                    "    (SELECT ABS(SUM(CASE WHEN taxline = 'F' THEN netamount ELSE 0 END)) " +
+                    "     FROM transactionline " +
+                    "     WHERE transaction = so.id AND mainline = 'F') as so_nontax_amount, " +
+                    "    COALESCE(inv_summary.nontax_billed, 0) as inv_nontax_billed, " +
+                    "    (SELECT ABS(SUM(CASE WHEN taxline = 'T' THEN netamount ELSE 0 END)) " +
+                    "     FROM transactionline " +
+                    "     WHERE transaction = so.id AND mainline = 'F') as so_tax_amount, " +
+                    "    COALESCE(inv_summary.tax_billed, 0) as inv_tax_billed, " +
+                    "    so.status as so_status_id, " +
+                    "    BUILTIN.DF(so.status) as so_status_text, " +
+                    "    so.createddate as so_created_date, " +
+                    "    CASE " +
+                    "        WHEN emp.firstname IS NOT NULL AND emp.lastname IS NOT NULL " +
+                    "        THEN emp.firstname || ' ' || emp.lastname " +
+                    "        WHEN emp.firstname IS NOT NULL " +
+                    "        THEN emp.firstname " +
+                    "        WHEN emp.lastname IS NOT NULL " +
+                    "        THEN emp.lastname " +
+                    "        ELSE BUILTIN.DF(so.createdby) " +
+                    "    END as so_created_by " +
+                    "FROM transaction so " +
+                    "INNER JOIN customer cust ON so.entity = cust.id " +
+                    "LEFT JOIN employee emp ON so.createdby = emp.id " +
+                    "LEFT JOIN ( " +
+                    "    SELECT " +
+                    "        inv_data.createdfrom, " +
+                    "        SUM(inv_data.inv_total) as total_billed, " +
+                    "        SUM(inv_data.inv_nontax) as nontax_billed, " +
+                    "        SUM(inv_data.inv_tax) as tax_billed " +
+                    "    FROM ( " +
+                    "        SELECT DISTINCT " +
+                    "            tl.createdfrom, " +
+                    "            inv.id, " +
+                    "            inv.foreigntotal as inv_total, " +
+                    "            (SELECT ABS(SUM(CASE WHEN taxline = 'F' THEN netamount ELSE 0 END)) " +
+                    "             FROM transactionline " +
+                    "             WHERE transaction = inv.id AND mainline = 'F') as inv_nontax, " +
+                    "            (SELECT ABS(SUM(CASE WHEN taxline = 'T' THEN netamount ELSE 0 END)) " +
+                    "             FROM transactionline " +
+                    "             WHERE transaction = inv.id AND mainline = 'F') as inv_tax " +
+                    "        FROM transactionline tl " +
+                    "        INNER JOIN transaction inv ON tl.transaction = inv.id " +
+                    "        WHERE inv.type = 'CustInvc' " +
+                    "        GROUP BY tl.createdfrom, inv.id, inv.foreigntotal " +
+                    "    ) inv_data " +
+                    "    GROUP BY inv_data.createdfrom " +
+                    ") inv_summary ON so.id = inv_summary.createdfrom " +
+                    "WHERE so.entity = ? " +
+                    "  AND so.type = 'SalesOrd' " +
+                    "ORDER BY so.trandate ASC";
+                
+                var soResults = query.runSuiteQL({
+                    query: soQuerySQL,
+                    params: [customerId]
+                });
+                
+                var soResultsArray = soResults.asMappedResults();
+                
+                log.debug('SO Query Results', 'Found ' + soResultsArray.length + ' sales orders');
+                
+                var salesOrders = [];
+                var taxDiscrepancies = [];
+                var billingVariances = [];
+                
+                // Summary totals
+                var totalSOs = 0;
+                var totalSOAmount = 0;
+                var totalSOTax = 0;
+                var totalInvBilled = 0;
+                var totalInvTax = 0;
+                
+                for (var i = 0; i < soResultsArray.length; i++) {
+                    var row = soResultsArray[i];
+                    var soId = row.id;
+                    var tranid = row.tranid;
+                    var trandate = row.trandate;
+                    var createdDate = row.so_created_date;
+                    var status = row.so_status_id;
+                    var statusText = row.so_status_text;
+                    var employeeName = row.so_created_by || '-';
+                    var soNontaxAmount = parseFloat(row.so_nontax_amount || 0);
+                    var soTaxAmount = parseFloat(row.so_tax_amount || 0);
+                    var soTotalAmount = parseFloat(row.so_total_amount || 0);
+                    var invNontaxBilled = parseFloat(row.inv_nontax_billed || 0);
+                    var invTaxBilled = parseFloat(row.inv_tax_billed || 0);
+                    var invTotalBilled = parseFloat(row.inv_total_billed || 0);
+                    
+                    // Calculate tax percentages
+                    var soTaxPct = soNontaxAmount > 0 ? Math.round((soTaxAmount / soNontaxAmount) * 100) : 0;
+                    var invTaxPct = invNontaxBilled > 0 ? Math.round((invTaxBilled / invNontaxBilled) * 100) : 0;
+                    
+                    // Tax discrepancy check (ONLY for fully billed orders - Status G)
+                    var hasTaxDiscrepancy = false;
+                    if (status === 'G' && invTotalBilled > 0.01) {
+                        var taxDiff = Math.abs(soTaxAmount - invTaxBilled);
+                        if (taxDiff > 0.01) {
+                            hasTaxDiscrepancy = true;
+                            taxDiscrepancies.push({
+                                soId: soId,
+                                tranid: tranid,
+                                soTax: soTaxAmount,
+                                invTax: invTaxBilled,
+                                difference: soTaxAmount - invTaxBilled,
+                                soTaxPct: soTaxPct,
+                                invTaxPct: invTaxPct
+                            });
+                        }
+                    }
+                    
+                    // Billing variance check (only status G = Billed)
+                    var hasBillingVariance = false;
+                    if (status === 'G') {
+                        var amountDiff = Math.abs(soTotalAmount - invTotalBilled);
+                        if (amountDiff > 0.01) {
+                            hasBillingVariance = true;
+                            billingVariances.push({
+                                soId: soId,
+                                tranid: tranid,
+                                status: status,
+                                statusText: statusText,
+                                soTotal: soTotalAmount,
+                                invBilled: invTotalBilled,
+                                difference: soTotalAmount - invTotalBilled
+                            });
+                        }
+                    }
+                    
+                    salesOrders.push({
+                        soTranId: tranid,
+                        soDate: trandate,
+                        soCustomerName: customerName,
+                        soTotalAmount: soTotalAmount,
+                        invTotalBilled: invTotalBilled,
+                        soTotalUnbilled: soTotalAmount - invTotalBilled,
+                        soNontaxAmount: soNontaxAmount,
+                        invNontaxBilled: invNontaxBilled,
+                        soTaxAmount: soTaxAmount,
+                        invTaxBilled: invTaxBilled,
+                        soTaxPct: soTaxPct,
+                        invTaxPct: invTaxPct,
+                        soStatusId: status,
+                        soStatusText: statusText,
+                        soCreatedDate: createdDate,
+                        soCreatedBy: employeeName,
+                        soId: soId,
+                        hasTaxDiscrepancy: hasTaxDiscrepancy,
+                        hasBillingVariance: hasBillingVariance
+                    });
+                    
+                    totalSOs++;
+                    totalSOAmount += soNontaxAmount;
+                    totalSOTax += soTaxAmount;
+                    totalInvBilled += invNontaxBilled;
+                    totalInvTax += invTaxBilled;
+                }
+                
+                return {
+                    customerName: customerName,
+                    customerId: customerId,
+                    salesOrders: salesOrders,
+                    summary: {
+                        totalSalesOrders: totalSOs,
+                        totalOrderAmount: totalSOAmount + totalSOTax,
+                        totalBilledAmount: totalInvBilled + totalInvTax,
+                        totalUnbilledAmount: (totalSOAmount + totalSOTax) - (totalInvBilled + totalInvTax),
+                        totalOrderNonTaxAmount: totalSOAmount,
+                        totalOrderTaxAmount: totalSOTax,
+                        totalBilledNonTaxAmount: totalInvBilled,
+                        totalBilledTaxAmount: totalInvTax,
+                        taxDiscrepancyCount: taxDiscrepancies.length,
+                        taxDiscrepancies: taxDiscrepancies,
+                        billingVarianceCount: billingVariances.length,
+                        billingVariances: billingVariances
+                    }
+                };
+                
+            } catch (e) {
+                log.error('Error in getCustomerSalesOrdersSummary', e.toString());
+                return { 
+                    error: e.toString(),
+                    customerName: null,
+                    salesOrders: [],
+                    summary: {}
+                };
+            }
+        }
+        
+        /**
+         * Helper: Map status text to status code
+         * @param {string} statusText - Status text (e.g., "Billed", "Pending Fulfillment")
+         * @returns {string} Status code (e.g., "G", "B")
+         */
+        function mapStatusTextToCode(statusText) {
+            if (!statusText) return '';
+            
+            var statusMap = {
+                'Pending Approval': 'A',
+                'Pending Fulfillment': 'B',
+                'Cancelled': 'C',
+                'Partially Fulfilled': 'D',
+                'Pending Billing/Partially Fulfilled': 'E',
+                'Pending Billing': 'F',
+                'Billed': 'G',
+                'Closed': 'H'
+            };
+            
+            return statusMap[statusText] || '';
         }
 
         return {
