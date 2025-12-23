@@ -137,6 +137,18 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                     return;
                 }
                 
+                // Handle Complete Sales Lifecycle requests
+                if (body.action === 'completeSalesLifecycle') {
+                    var creditMemoId = body.creditMemoId;
+                    log.debug('Complete Sales Lifecycle Request', 'CM ID: ' + creditMemoId);
+                    
+                    var result = getCompleteSalesLifecycle(creditMemoId);
+                    
+                    response.setHeader({ name: 'Content-Type', value: 'application/json' });
+                    response.write(JSON.stringify({ success: true, data: result }));
+                    return;
+                }
+                
                 // Handle deposit update requests
                 var depositId = body.depositId;
                 var nextStep = body.nextStep;
@@ -363,11 +375,12 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
             
             // Tab navigation
             html += '<div class="tab-navigation">';
-            html += '<button type="button" class="tab-button active" onclick="switchExplainTab(1)" id="tab-btn-1">SO↔INV Comparison</button>';
+            html += '<button type="button" class="tab-button active" onclick="switchExplainTab(5)" id="tab-btn-5">Sales Order Totals (All)</button>';
+            html += '<button type="button" class="tab-button" onclick="switchExplainTab(1)" id="tab-btn-1">SO↔INV Comparison</button>';
             html += '<button type="button" class="tab-button" onclick="switchExplainTab(2)" id="tab-btn-2">CD Cross-SO Analysis</button>';
             html += '<button type="button" class="tab-button" onclick="switchExplainTab(3)" id="tab-btn-3">Overpayment Summary</button>';
             html += '<button type="button" class="tab-button" onclick="switchExplainTab(4)" id="tab-btn-4">AI Generated SO Price Changes</button>';
-            html += '<button type="button" class="tab-button" onclick="switchExplainTab(5)" id="tab-btn-5">Sales Order Totals (All)</button>';
+            html += '<button type="button" class="tab-button" onclick="switchExplainTab(6)" id="tab-btn-6">Complete Sales Lifecycle</button>';
             html += '</div>';
             
             // Tab content containers
@@ -396,6 +409,11 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
             // Tab 5: Sales Order Totals (All)
             html += '<div id="tab-content-5" class="tab-content">';
             html += '<div class="comparison-loading">Loading Sales Order Totals...</div>';
+            html += '</div>';
+            
+            // Tab 6: Complete Sales Lifecycle
+            html += '<div id="tab-content-6" class="tab-content">';
+            html += '<div class="comparison-loading">Loading Complete Sales Lifecycle...</div>';
             html += '</div>';
             
             html += '</div>';
@@ -2047,6 +2065,9 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 'var tab1Loaded = false;' +
                 'var tab2Loaded = false;' +
                 'var tab3Loaded = false;' +
+                'var tab4Loaded = false;' +
+                'var tab5Loaded = false;' +
+                'var tab6Loaded = false;' +
                 '' +
                 '/* Show Unified Explain Modal */' +
                 'function showExplainModal(creditMemoId, customerName, cmNumber, cmAmount, linkedCD, salesOrder) {' +
@@ -2057,6 +2078,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    tab3Loaded = false;' +
                 '    tab4Loaded = false;' +
                 '    tab5Loaded = false;' +
+                '    tab6Loaded = false;' +
                 '    tab4HasExistingRecord = false;' +
                 '    ' +
                 '    var modal = document.getElementById("explainModal");' +
@@ -2111,25 +2133,25 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    customerInfo.style.display = "block";' +
                 '    ' +
                 '    /* Reset tabs */' +
-                '    document.getElementById("tab-btn-1").classList.add("active");' +
+                '    document.getElementById("tab-btn-5").classList.add("active");' +
+                '    document.getElementById("tab-btn-1").classList.remove("active");' +
                 '    document.getElementById("tab-btn-2").classList.remove("active");' +
                 '    document.getElementById("tab-btn-3").classList.remove("active");' +
                 '    document.getElementById("tab-btn-4").classList.remove("active");' +
-                '    document.getElementById("tab-btn-5").classList.remove("active");' +
                 '    ' +
-                '    document.getElementById("tab-content-1").classList.add("active");' +
+                '    document.getElementById("tab-content-5").classList.add("active");' +
+                '    document.getElementById("tab-content-1").classList.remove("active");' +
                 '    document.getElementById("tab-content-2").classList.remove("active");' +
                 '    document.getElementById("tab-content-3").classList.remove("active");' +
                 '    document.getElementById("tab-content-4").classList.remove("active");' +
-                '    document.getElementById("tab-content-5").classList.remove("active");' +
                 '    document.getElementById("tab-content-4").innerHTML = "<div class=\\"comparison-loading\\">Loading AI Generated SO Price Changes...</div>";' +
                 '    ' +
                 '    /* Show modal */' +
                 '    modal.classList.add("visible");' +
                 '    overlay.classList.add("visible");' +
                 '    ' +
-                '    /* Load Tab 1 immediately */' +
-                '    loadTab1Data();' +
+                '    /* Load Tab 5 immediately (Sales Order Totals) */' +
+                '    loadTab5Data();' +
                 '}' +
                 '' +
                 '/* Hide Explain Modal */' +
@@ -2144,15 +2166,17 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    currentTab = tabNumber;' +
                 '    ' +
                 '    /* Update tab buttons */' +
-                '    for (var i = 1; i <= 5; i++) {' +
+                '    for (var i = 1; i <= 6; i++) {' +
                 '        var btn = document.getElementById("tab-btn-" + i);' +
                 '        var content = document.getElementById("tab-content-" + i);' +
-                '        if (i === tabNumber) {' +
-                '            btn.classList.add("active");' +
-                '            content.classList.add("active");' +
-                '        } else {' +
-                '            btn.classList.remove("active");' +
-                '            content.classList.remove("active");' +
+                '        if (btn && content) {' +
+                '            if (i === tabNumber) {' +
+                '                btn.classList.add("active");' +
+                '                content.classList.add("active");' +
+                '            } else {' +
+                '                btn.classList.remove("active");' +
+                '                content.classList.remove("active");' +
+                '            }' +
                 '        }' +
                 '    }' +
                 '    ' +
@@ -2167,6 +2191,8 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '        loadTab4Data();' +
                 '    } else if (tabNumber === 5 && !tab5Loaded) {' +
                 '        loadTab5Data();' +
+                '    } else if (tabNumber === 6 && !tab6Loaded) {' +
+                '        loadTab6Data();' +
                 '    }' +
                 '}' +
                 '' +
@@ -2322,7 +2348,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '/* Run AI Analysis for Tab 4 */' +
                 'function runTab4AIAnalysis() {' +
                 '    var body = document.getElementById("tab-content-4");' +
-                '    body.innerHTML = "<div class=\\"comparison-loading\\">Running AI Analysis... This may take 10-30 seconds...</div>";' +
+                '    body.innerHTML = "<div class=\\"comparison-loading\\">Running AI Analysis... This may take 1 - 2 minutes...</div>";' +
                 '    ' +
                 '    fetch("' + scriptUrl + '", {' +
                 '        method: "POST",' +
@@ -2511,6 +2537,281 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    html += "</tbody></table></div>";' +
                 '    ' +
                 '    body.innerHTML = html;' +
+                '}' +
+                '' +
+                '/* Load Tab 6: Complete Sales Lifecycle */' +
+                'function loadTab6Data() {' +
+                '    var body = document.getElementById("tab-content-6");' +
+                '    body.innerHTML = "<div class=\\"comparison-loading\\">Loading Complete Sales Lifecycle...</div>";' +
+                '    ' +
+                '    fetch("' + scriptUrl + '", {' +
+                '        method: "POST",' +
+                '        headers: { "Content-Type": "application/json" },' +
+                '        body: JSON.stringify({ action: "completeSalesLifecycle", creditMemoId: currentCreditMemoId })' +
+                '    })' +
+                '    .then(function(response) { return response.json(); })' +
+                '    .then(function(result) {' +
+                '        if (result.success && result.data) {' +
+                '            renderTab6Result(result.data);' +
+                '            tab6Loaded = true;' +
+                '        } else {' +
+                '            body.innerHTML = "<div class=\\"error-msg\\">Error: " + (result.data && result.data.error ? result.data.error : "Unknown error") + "</div>";' +
+                '        }' +
+                '    })' +
+                '    .catch(function(err) {' +
+                '        body.innerHTML = "<div class=\\"error-msg\\">Error loading complete sales lifecycle: " + err.message + "</div>";' +
+                '    });' +
+                '}' +
+                '' +
+                '/* Render Tab 6: Complete Sales Lifecycle Result */' +
+                'function renderTab6Result(data) {' +
+                '    var body = document.getElementById("tab-content-6");' +
+                '    ' +
+                '    if (data.error) {' +
+                '        body.innerHTML = "<div class=\\"error-msg\\"><strong>Error:</strong> " + data.error + "</div>";' +
+                '        return;' +
+                '    }' +
+                '    ' +
+                '    var html = "";' +
+                '    ' +
+                '    /* Header with Export Button */' +
+                '    html += "<div style=\\"display:flex;justify-content:space-between;align-items:center;margin:0 0 20px;\\">";' +
+                '    html += "<div style=\\"padding:15px;background:#e8f5e9;border-left:4px solid #4CAF50;border-radius:4px;flex:1;margin-right:15px;\\">";' +
+                '    html += "<strong>Complete Sales Lifecycle:</strong> This view shows the complete financial flow for <strong>" + (data.customerName || "this customer") + "</strong>, ";' +
+                '    html += "tracking deposits, invoices, and payments through each sales order. The two-column view shows how deposits and A/R balances change with each transaction.";' +
+                '    html += "</div>";' +
+                '    html += "<button onclick=\\"exportLifecycleToExcel()\\" class=\\"export-excel-btn\\" style=\\"background:#217346;color:#fff;border:none;padding:12px 24px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:600;white-space:nowrap;\\">📊 Export to Excel</button>";' +
+                '    html += "</div>";' +
+                '    ' +
+                '    /* Summary Cards */' +
+                '    var totals = data.totals || {};' +
+                '    var depositBalance = data.depositBalance || 0;' +
+                '    var arBalance = data.arBalance || 0;' +
+                '    html += "<div class=\\"comparison-summary\\">";' +
+                '    html += "<div class=\\"comparison-card\\"><div class=\\"comparison-card-label\\">Current Deposit Balance</div><div class=\\"comparison-card-value\\">" + formatCompCurrency(depositBalance) + "</div></div>";' +
+                '    html += "<div class=\\"comparison-card\\"><div class=\\"comparison-card-label\\">Current A/R Balance</div><div class=\\"comparison-card-value\\">" + formatCompCurrency(arBalance) + "</div></div>";' +
+                '    html += "<div class=\\"comparison-card\\"><div class=\\"comparison-card-label\\">Net Deposit Position</div><div class=\\"comparison-card-value\\">" + formatCompCurrency(totals.netDepositBalance || 0) + "</div></div>";' +
+                '    html += "<div class=\\"comparison-card " + (totals.netARBalance > 0.01 ? "warning" : totals.netARBalance < -0.01 ? "error" : "success") + "\\"><div class=\\"comparison-card-label\\">Net A/R Position</div><div class=\\"comparison-card-value\\">" + formatCompCurrency(totals.netARBalance || 0) + "</div></div>";' +
+                '    html += "</div>";' +
+                '    ' +
+                '    /* Lifecycle Table */' +
+                '    html += "<div class=\\"comparison-table-container\\">";' +
+                '    html += "<table class=\\"comparison-table lifecycle-table\\" style=\\"font-size:13px;\\">";' +
+                '    html += "<thead><tr style=\\"background:#2c3e50;color:#000;\\">";' +
+                '    html += "<th style=\\"text-align:left;padding:12px 8px;\\">SO</th>";' +
+                '    html += "<th style=\\"text-align:left;padding:12px 8px;\\">TRANSACTION</th>";' +
+                '    html += "<th style=\\"text-align:center;padding:12px 8px;\\">TYPE</th>";' +
+                '    html += "<th style=\\"text-align:center;padding:12px 8px;\\">DATE</th>";' +
+                '    html += "<th class=\\"amount\\" style=\\"text-align:right;padding:12px 8px;\\">ORDER VALUE</th>";' +
+                '    html += "<th class=\\"amount\\" style=\\"text-align:right;padding:12px 8px;\\">DEPOSIT (+/-)</th>";' +
+                '    html += "<th class=\\"amount\\" style=\\"text-align:right;padding:12px 8px;\\">A/R (+/-)</th>";' +
+                '    html += "<th style=\\"text-align:left;padding:12px 8px;\\">Application Details</th>";' +
+                '    html += "<th style=\\"text-align:left;padding:12px 8px;\\">STATUS</th>";' +
+                '    html += "</tr></thead>";' +
+                '    html += "<tbody>";' +
+                '    ' +
+                '    var salesOrders = data.salesOrders || [];' +
+                '    var rowNum = 0;' +
+                '    ' +
+                '    /* Process each Sales Order */' +
+                '    for (var i = 0; i < salesOrders.length; i++) {' +
+                '        var so = salesOrders[i];' +
+                '        rowNum++;' +
+                '        ' +
+                '        /* Sales Order Header Row */' +
+                '        html += "<tr class=\\"so-header-row\\" style=\\"background:#ecf0f1;border-top:2px solid #2c3e50;\\">";' +
+                '        html += "<td style=\\"font-weight:600;padding:10px 8px;\\"><a href=\\"/app/accounting/transactions/salesord.nl?id=" + so.soId + "\\" target=\\"_blank\\">" + so.soTranid + "</a></td>";' +
+                '        html += "<td style=\\"font-weight:600;padding:10px 8px;\\">SALES ORDER</td>";' +
+                '        html += "<td style=\\"text-align:center;padding:10px 8px;\\"><span class=\\"status-badge\\" style=\\"background:#3498db;color:#fff;padding:4px 8px;border-radius:4px;font-size:11px;\\">SO</span></td>";' +
+                '        html += "<td style=\\"text-align:center;padding:10px 8px;\\">" + so.soDate + "</td>";' +
+                '        html += "<td class=\\"amount\\" style=\\"font-weight:600;padding:10px 8px;\\">" + formatCompCurrency(so.soAmount) + "</td>";' +
+                '        html += "<td class=\\"amount\\" style=\\"padding:10px 8px;\\"></td>";' +
+                '        html += "<td class=\\"amount\\" style=\\"padding:10px 8px;\\"></td>";' +
+                '        html += "<td style=\\"padding:10px 8px;\\"></td>";' +
+                '        html += "<td style=\\"padding:10px 8px;color:#7f8c8d;font-size:12px;\\">" + so.soStatusText + "</td>";' +
+                '        html += "</tr>";' +
+                '        ' +
+                '        /* Transaction Rows */' +
+                '        var transactions = so.transactions || [];' +
+                '        for (var j = 0; j < transactions.length; j++) {' +
+                '            var txn = transactions[j];' +
+                '            rowNum++;' +
+                '            var isCD = txn.type === "CD";' +
+                '            var isDEPA = txn.type === "DEPA";' +
+                '            var isINV = txn.type === "INV";' +
+                '            var isPYMT = txn.type === "PYMT";' +
+                '            ' +
+                '            var bgColor = rowNum % 2 === 0 ? "#ffffff" : "#f8f9fa";' +
+                '            if (txn.isOverpayment) bgColor = "#fff3cd";' +
+                '            ' +
+                '            html += "<tr style=\\"background:" + bgColor + ";\\">";' +
+                '            html += "<td style=\\"padding:8px;\\"></td>";' +
+                '            html += "<td style=\\"padding:8px;padding-left:" + (txn.indent ? "30px" : "20px") + ";\\">";' +
+                '            html += (txn.indent || "") + "<a href=\\"/app/accounting/transactions/transaction.nl?id=" + txn.id + "\\" target=\\"_blank\\">" + txn.tranid + "</a>";' +
+                '            html += "</td>";' +
+                '            ' +
+                '            /* Type Badge */' +
+                '            var badgeColor = isCD ? "#28a745" : isDEPA ? "#17a2b8" : isINV ? "#ffc107" : isPYMT ? "#6f42c1" : "#6c757d";' +
+                '            html += "<td style=\\"text-align:center;padding:8px;\\"><span class=\\"status-badge\\" style=\\"background:" + badgeColor + ";color:#fff;padding:4px 8px;border-radius:4px;font-size:11px;font-weight:600;\\">" + txn.type + "</span></td>";' +
+                '            ' +
+                '            html += "<td style=\\"text-align:center;padding:8px;color:#666;font-size:12px;\\">" + txn.date + "</td>";' +
+                '            html += "<td class=\\"amount\\" style=\\"padding:8px;\\"></td>";' +
+                '            ' +
+                '            /* Deposit Column */' +
+                '            html += "<td class=\\"amount\\" style=\\"padding:8px;color:#000;\\">";' +
+                '            if (Math.abs(txn.depositAmount) > 0.01) {' +
+                '                var depAmt = Math.abs(txn.depositAmount);' +
+                '                var depFormatted = "$" + depAmt.toFixed(2).replace(/\\d(?=(\\d{3})+\\.)/g, "$&,");' +
+                '                html += txn.depositAmount < 0 ? "(" + depFormatted + ")" : depFormatted;' +
+                '            } else {' +
+                '                html += "-";' +
+                '            }' +
+                '            html += "</td>";' +
+                '            ' +
+                '            /* A/R Column */' +
+                '            html += "<td class=\\"amount\\" style=\\"padding:8px;color:#000;\\">";' +
+                '            if (Math.abs(txn.arAmount) > 0.01) {' +
+                '                var arAmt = Math.abs(txn.arAmount);' +
+                '                var arFormatted = "$" + arAmt.toFixed(2).replace(/\\d(?=(\\d{3})+\\.)/g, "$&,");' +
+                '                html += txn.arAmount < 0 ? "(" + arFormatted + ")" : arFormatted;' +
+                '            } else {' +
+                '                html += "-";' +
+                '            }' +
+                '            html += "</td>";' +
+                '            ' +
+                '            html += "<td style=\\"padding:8px;font-size:12px;color:#666;\\">" + (txn.appliedTo || "") + "</td>";' +
+                '            html += "<td style=\\"padding:8px;font-size:12px;color:#666;\\">" + (txn.status || "") + "</td>";' +
+                '            html += "</tr>";' +
+                '        }' +
+                '        ' +
+                '        /* Subtotal Row */' +
+                '        var subtotal = so.subtotal || {};' +
+                '        html += "<tr class=\\"subtotal-row\\" style=\\"background:#e8e8e8;border-bottom:2px solid #2c3e50;font-weight:600;\\">";' +
+                '        html += "<td colspan=\\"2\\" style=\\"padding:10px 8px;\\">SUBTOTAL " + so.soTranid + "</td>";' +
+                '        html += "<td colspan=\\"2\\" style=\\"text-align:right;padding:10px 8px;color:#7f8c8d;font-size:12px;\\">" + subtotal.status + "</td>";' +
+                '        html += "<td class=\\"amount\\" style=\\"padding:10px 8px;\\">" + formatCompCurrency(subtotal.soAmount || 0) + "</td>";' +
+                '        html += "<td class=\\"amount\\" style=\\"padding:10px 8px;\\">" + formatCompCurrency(subtotal.netDeposit || 0) + "</td>";' +
+                '        html += "<td class=\\"amount\\" style=\\"padding:10px 8px;\\">" + formatCompCurrency(subtotal.netAR || 0) + "</td>";' +
+                '        html += "<td colspan=\\"2\\" style=\\"padding:10px 8px;\\"></td>";' +
+                '        html += "</tr>";' +
+                '    }' +
+                '    ' +
+                '    /* Unlinked Deposits */' +
+                '    var unlinkedDeposits = data.unlinkedDeposits || [];' +
+                '    if (unlinkedDeposits.length > 0) {' +
+                '        html += "<tr style=\\"background:#ffe4e1;border-top:3px solid #dc3545;\\">";' +
+                '        html += "<td colspan=\\"9\\" style=\\"padding:10px 8px;font-weight:600;color:#dc3545;\\">⚠️ UNLINKED DEPOSITS (Not Associated with Any Sales Order)</td>";' +
+                '        html += "</tr>";' +
+                '        ' +
+                '        for (var k = 0; k < unlinkedDeposits.length; k++) {' +
+                '            var unlinkedDep = unlinkedDeposits[k];' +
+                '            rowNum++;' +
+                '            var bgColor = rowNum % 2 === 0 ? "#ffffff" : "#f8f9fa";' +
+                '            ' +
+                '            html += "<tr style=\\"background:" + bgColor + ";\\">";' +
+                '            html += "<td style=\\"padding:8px;color:#999;\\">UNLINKED</td>";' +
+                '            html += "<td style=\\"padding:8px;\\"><a href=\\"/app/accounting/transactions/transaction.nl?id=" + unlinkedDep.id + "\\" target=\\"_blank\\">" + unlinkedDep.tranid + "</a></td>";' +
+                '            html += "<td style=\\"text-align:center;padding:8px;\\"><span class=\\"status-badge\\" style=\\"background:#dc3545;color:#fff;padding:4px 8px;border-radius:4px;font-size:11px;font-weight:600;\\">CD</span></td>";' +
+                '            html += "<td style=\\"text-align:center;padding:8px;color:#666;font-size:12px;\\">" + unlinkedDep.date + "</td>";' +
+                '            html += "<td class=\\"amount\\" style=\\"padding:8px;\\"></td>";' +
+                '            html += "<td class=\\"amount\\" style=\\"padding:8px;color:#28a745;font-weight:600;\\">" + formatCompCurrency(unlinkedDep.depositAmount) + "</td>";' +
+                '            html += "<td class=\\"amount\\" style=\\"padding:8px;color:#ccc;\\">-</td>";' +
+                '            html += "<td style=\\"padding:8px;font-size:12px;color:#666;\\">" + (unlinkedDep.appliedTo || "") + "</td>";' +
+                '            html += "<td style=\\"padding:8px;font-size:12px;color:#dc3545;\\">Unlinked</td>";' +
+                '            html += "</tr>";' +
+                '        }' +
+                '    }' +
+                '    ' +
+                '    /* Grand Totals Row */' +
+                '    html += "<tr class=\\"comparison-totals\\" style=\\"background:#2c3e50;color:#fff;font-size:15px;font-weight:700;\\">";' +
+                '    html += "<td colspan=\\"4\\" style=\\"padding:12px 8px;\\">SO LIFECYCLE TOTALS</td>";' +
+                '    html += "<td class=\\"amount\\" style=\\"padding:12px 8px;\\"></td>";' +
+                '    html += "<td class=\\"amount\\" style=\\"padding:12px 8px;background:#28a745;color:#fff;\\">" + formatCompCurrency(totals.netDepositBalance || 0) + "</td>";' +
+                '    html += "<td class=\\"amount\\" style=\\"padding:12px 8px;background:#ffc107;color:#000;\\">" + formatCompCurrency(totals.netARBalance || 0) + "</td>";' +
+                '    html += "<td colspan=\\"2\\" style=\\"padding:12px 8px;text-align:right;font-size:13px;\\">" + totals.summary + "</td>";' +
+                '    html += "</tr>";' +
+                '    ' +
+                '    html += "</tbody></table></div>";' +
+                '    ' +
+                '    body.innerHTML = html;' +
+                '    ' +
+                '    /* Store data for Excel export */' +
+                '    window.lifecycleData = data;' +
+                '}' +
+                '' +
+                '/* Export Lifecycle to Excel */' +
+                'function exportLifecycleToExcel() {' +
+                '    if (!window.lifecycleData) {' +
+                '        alert("No lifecycle data available to export");' +
+                '        return;' +
+                '    }' +
+                '    ' +
+                '    var data = window.lifecycleData;' +
+                '    var rows = [];' +
+                '    ' +
+                '    /* Header Row */' +
+                '    rows.push(["SO LIFECYCLE - TWO-COLUMN FINANCIAL VIEW", "", "", "", "", "", "", "", ""]);' +
+                '    rows.push(["SO", "TRANSACTION", "TYPE", "DATE", "ORDER VALUE", "DEPOSIT (+/-)", "A/R (+/-)", "APPLIED TO", "STATUS"]);' +
+                '    ' +
+                '    /* Data Rows */' +
+                '    var salesOrders = data.salesOrders || [];' +
+                '    for (var i = 0; i < salesOrders.length; i++) {' +
+                '        var so = salesOrders[i];' +
+                '        ' +
+                '        /* SO Header */' +
+                '        rows.push([so.soTranid, "SALES ORDER", "SO", so.soDate, so.soAmount, "", "", "", so.soStatusText]);' +
+                '        ' +
+                '        /* Transactions */' +
+                '        var transactions = so.transactions || [];' +
+                '        for (var j = 0; j < transactions.length; j++) {' +
+                '            var txn = transactions[j];' +
+                '            var depAmt = Math.abs(txn.depositAmount) > 0.01 ? txn.depositAmount : "";' +
+                '            var arAmt = Math.abs(txn.arAmount) > 0.01 ? txn.arAmount : "";' +
+                '            rows.push(["", (txn.indent || "") + txn.tranid, txn.type, txn.date, "", depAmt, arAmt, txn.appliedTo || "", txn.status || ""]);' +
+                '        }' +
+                '        ' +
+                '        /* Subtotal */' +
+                '        var subtotal = so.subtotal || {};' +
+                '        rows.push(["SUBTOTAL " + so.soTranid, "", "", "", subtotal.soAmount || 0, subtotal.netDeposit || 0, subtotal.netAR || 0, "", subtotal.status]);' +
+                '    }' +
+                '    ' +
+                '    /* Unlinked Deposits */' +
+                '    var unlinkedDeposits = data.unlinkedDeposits || [];' +
+                '    if (unlinkedDeposits.length > 0) {' +
+                '        rows.push(["", "", "", "", "", "", "", "", ""]);' +
+                '        rows.push(["UNLINKED DEPOSITS", "", "", "", "", "", "", "", ""]);' +
+                '        for (var k = 0; k < unlinkedDeposits.length; k++) {' +
+                '            var unlinkedDep = unlinkedDeposits[k];' +
+                '            rows.push(["UNLINKED", unlinkedDep.tranid, unlinkedDep.type, unlinkedDep.date, "", unlinkedDep.depositAmount, "", unlinkedDep.appliedTo || "", "Unlinked"]);' +
+                '        }' +
+                '    }' +
+                '    ' +
+                '    /* Totals */' +
+                '    var totals = data.totals || {};' +
+                '    rows.push(["", "", "", "", "", "", "", "", ""]);' +
+                '    rows.push(["SO LIFECYCLE TOTALS", "", "", "", "", totals.netDepositBalance || 0, totals.netARBalance || 0, "", totals.summary]);' +
+                '    ' +
+                '    /* Convert to CSV */' +
+                '    var csv = rows.map(function(row) {' +
+                '        return row.map(function(cell) {' +
+                '            var cellStr = String(cell == null ? "" : cell);' +
+                '            if (cellStr.indexOf(",") >= 0 || cellStr.indexOf("\\"") >= 0 || cellStr.indexOf("\\n") >= 0) {' +
+                '                return "\\"" + cellStr.replace(/"/g, "\\"\\"") + "\\"";' +
+                '            }' +
+                '            return cellStr;' +
+                '        }).join(",");' +
+                '    }).join("\\n");' +
+                '    ' +
+                '    /* Download */' +
+                '    var blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });' +
+                '    var link = document.createElement("a");' +
+                '    var url = URL.createObjectURL(blob);' +
+                '    link.setAttribute("href", url);' +
+                '    link.setAttribute("download", "sales_lifecycle_" + (data.customerName || "customer").replace(/\\s+/g, "_") + "_" + new Date().toISOString().split("T")[0] + ".csv");' +
+                '    link.style.visibility = "hidden";' +
+                '    document.body.appendChild(link);' +
+                '    link.click();' +
+                '    document.body.removeChild(link);' +
                 '}' +
                 '' +
                 '/* Render Tab 1: SO↔INV Comparison Result */' +
@@ -3049,7 +3350,8 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    /* Helper Text */' +
                 '    html += "<div style=\\"margin:0 0 20px;padding:15px;background:#e3f2fd;border-left:4px solid #1976d2;border-radius:4px;\\">";' +
                 '    html += "<strong>What This Analysis Shows:</strong> Overpayments are calculated per Sales Order. ";' +
-                '    html += "Each section below shows a Sales Order, its deposit vs invoice calculation, and the Credit Memo(s) created from that overpayment.";' +
+                '    html += "Each section shows a Sales Order, its deposits + payments vs invoice calculation, and the Credit Memo(s) created from that overpayment. ";' +
+                '    html += "Customer Payments are payments applied directly to invoices (not collected as deposits on the SO).";' +
                 '    html += "</div>";' +
                 '    ' +
                 '    /* Overall Summary - Match CD Cross-SO tab style with grey background */' +
@@ -3095,6 +3397,10 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '            html += "<tr style=\\"border-bottom:1px solid #dee2e6;\\">";' +
                 '            html += "<td style=\\"padding:10px 0;font-size:14px;\\">Total Customer Deposits Collected</td>";' +
                 '            html += "<td style=\\"padding:10px 0;text-align:right;font-size:16px;font-weight:700;color:#28a745;\\">" + formatCompCurrency(so.totalDeposits) + "</td>";' +
+                '            html += "</tr>";' +
+                '            html += "<tr style=\\"border-bottom:1px solid #dee2e6;\\">";' +
+                '            html += "<td style=\\"padding:10px 0;font-size:14px;\\">Plus Customer Payments Collected</td>";' +
+                '            html += "<td style=\\"padding:10px 0;text-align:right;font-size:16px;font-weight:700;color:#28a745;\\">+" + formatCompCurrency(so.totalPayments || 0) + "</td>";' +
                 '            html += "</tr>";' +
                 '            html += "<tr style=\\"border-bottom:1px solid #dee2e6;\\">";' +
                 '            html += "<td style=\\"padding:10px 0;font-size:14px;\\">Minus Total Invoiced Value</td>";' +
@@ -4613,13 +4919,37 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                         var invoicesResult = query.runSuiteQL({ query: invoicesSql }).asMappedResults();
                         var totalInvoiced = parseFloat(invoicesResult[0].total_invoiced || 0);
 
+                        // Get total payments applied to invoices from this SO
+                        // Use nexttransactionlinelink: previousdoc=Invoice, nextdoc=Payment
+                        var paymentsSql = `
+                            SELECT COALESCE(SUM(ABS(tl_pymt.foreignamount)), 0) as total_payments
+                            FROM (
+                                SELECT inv.id as inv_id
+                                FROM transaction inv
+                                INNER JOIN transactionline tl ON inv.id = tl.transaction AND tl.mainline = 'T'
+                                WHERE tl.createdfrom = ` + soId + ` AND inv.type = 'CustInvc'
+                            ) so_invoices
+                            INNER JOIN nexttransactionlinelink link 
+                                ON link.previousdoc = so_invoices.inv_id 
+                                AND link.previousline = 0
+                            INNER JOIN transaction pymt 
+                                ON link.nextdoc = pymt.id 
+                                AND pymt.type = 'CustPymt'
+                            INNER JOIN transactionline tl_pymt 
+                                ON tl_pymt.transaction = pymt.id 
+                                AND tl_pymt.id = link.nextline
+                        `;
+                        var paymentsResult = query.runSuiteQL({ query: paymentsSql }).asMappedResults();
+                        var totalPayments = parseFloat(paymentsResult[0].total_payments || 0);
+
                         soMap[soId] = {
                             soId: soId,
                             soNumber: cm.so_number,
                             soTotal: parseFloat(cm.so_total || 0),
                             totalDeposits: totalDeposits,
+                            totalPayments: totalPayments,
                             totalInvoiced: totalInvoiced,
-                            overpaymentVariance: totalDeposits - totalInvoiced,
+                            overpaymentVariance: (totalDeposits + totalPayments) - totalInvoiced,
                             creditMemos: []
                         };
                     }
@@ -5767,6 +6097,467 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
             };
             
             return statusMap[statusText] || '';
+        }
+        
+        /**
+         * Gets complete sales lifecycle data for a customer (two-column financial view)
+         * @param {number} creditMemoId - Credit Memo internal ID
+         * @returns {Object} Complete lifecycle data
+         */
+        function getCompleteSalesLifecycle(creditMemoId) {
+            try {
+                log.debug('getCompleteSalesLifecycle', 'Starting - CM ID: ' + creditMemoId);
+                
+                // Get customer ID from credit memo
+                var customerId = null;
+                var cmSql = 
+                    'SELECT entity ' +
+                    'FROM transaction ' +
+                    'WHERE id = ' + creditMemoId;
+                var cmResults = query.runSuiteQL({ query: cmSql }).asMappedResults();
+                
+                if (cmResults.length === 0) {
+                    return { error: 'Credit Memo not found' };
+                }
+                
+                customerId = cmResults[0].entity;
+                log.debug('getCompleteSalesLifecycle', 'Customer ID: ' + customerId);
+                
+                // Get customer data (use balanceSearch and depositBalanceSearch fields for SuiteQL)
+                var customerSql = 
+                    'SELECT c.id, c.entityid, c.companyname, c.balanceSearch, c.depositBalanceSearch ' +
+                    'FROM customer c ' +
+                    'WHERE c.id = ' + customerId;
+                var customerResults = query.runSuiteQL({ query: customerSql }).asMappedResults();
+                
+                if (customerResults.length === 0) {
+                    return { error: 'Customer not found' };
+                }
+                
+                var customer = customerResults[0];
+                var customerName = customer.companyname || customer.entityid;
+                var depositBalance = parseFloat(customer.depositbalancesearch) || 0;
+                var arBalance = parseFloat(customer.balancesearch) || 0;
+                
+                log.debug('getCompleteSalesLifecycle', 'Customer: ' + customerName + ', Deposit Balance: ' + depositBalance + ', A/R Balance: ' + arBalance);
+                
+                // Get sales orders
+                var soSql = 
+                    'SELECT DISTINCT t.id, ' +
+                    '       t.tranid, ' +
+                    '       t.trandate, ' +
+                    '       t.foreigntotal as amount, ' +
+                    '       t.status, ' +
+                    '       BUILTIN.DF(t.status) as status_text ' +
+                    'FROM transaction t ' +
+                    'INNER JOIN transactionline tl ON t.id = tl.transaction AND tl.mainline = \'T\' ' +
+                    'WHERE t.entity = ' + customerId + ' ' +
+                    'AND t.type = \'SalesOrd\' ' +
+                    'AND (tl.department IS NULL OR tl.department != 13) ' +
+                    'AND (t.status NOT IN (\'H\', \'C\') OR t.trandate >= ADD_MONTHS(CURRENT_DATE, -3)) ' +
+                    'ORDER BY t.trandate ASC';
+                var soResults = query.runSuiteQL({ query: soSql }).asMappedResults();
+                
+                log.debug('getCompleteSalesLifecycle', 'Found ' + soResults.length + ' sales orders');
+                
+                // Get customer deposits
+                var cdSql = 
+                    'SELECT tl.transaction as cd_id, ' +
+                    '       tl.createdfrom as so_id, ' +
+                    '       t1.tranid as cd_tranid, ' +
+                    '       t1.trandate as cd_date, ' +
+                    '       t1.foreigntotal as cd_amount ' +
+                    'FROM transactionline tl ' +
+                    'INNER JOIN transaction t1 ON tl.transaction = t1.id ' +
+                    'WHERE t1.entity = ' + customerId + ' ' +
+                    'AND t1.type = \'CustDep\' ' +
+                    'AND tl.mainline = \'T\' ' +
+                    'ORDER BY t1.trandate';
+                var cdResults = query.runSuiteQL({ query: cdSql }).asMappedResults();
+                
+                log.debug('getCompleteSalesLifecycle', 'Found ' + cdResults.length + ' customer deposits');
+                
+                // Get invoices
+                var invSql = 
+                    'SELECT tl.transaction as inv_id, ' +
+                    '       tl.createdfrom as so_id, ' +
+                    '       t1.tranid as inv_tranid, ' +
+                    '       t1.trandate as inv_date, ' +
+                    '       t1.foreigntotal as inv_amount, ' +
+                    '       t1.status as inv_status, ' +
+                    '       BUILTIN.DF(t1.status) as inv_status_text, ' +
+                    '       t1.terms as inv_terms_id, ' +
+                    '       BUILTIN.DF(t1.terms) as inv_terms_name ' +
+                    'FROM transactionline tl ' +
+                    'INNER JOIN transaction t1 ON tl.transaction = t1.id ' +
+                    'WHERE t1.entity = ' + customerId + ' ' +
+                    'AND t1.type = \'CustInvc\' ' +
+                    'AND tl.mainline = \'T\' ' +
+                    'ORDER BY t1.trandate';
+                var invResults = query.runSuiteQL({ query: invSql }).asMappedResults();
+                
+                log.debug('getCompleteSalesLifecycle', 'Found ' + invResults.length + ' invoices');
+                
+                // Get deposit applications
+                var depaSql = 
+                    'SELECT t.id, ' +
+                    '       t.tranid as deposit_application_id, ' +
+                    '       t.trandate, ' +
+                    '       t.foreigntotal as applied_amount, ' +
+                    '       source_link.previousdoc as source_deposit_id, ' +
+                    '       BUILTIN.DF(source_link.previousdoc) as source_deposit_name, ' +
+                    '       applied_link.previousdoc as applied_to_id, ' +
+                    '       BUILTIN.DF(applied_link.previousdoc) as applied_to_name, ' +
+                    '       applied_link.previoustype as applied_to_type, ' +
+                    '       inv.memo as applied_to_memo, ' +
+                    '       inv_line.createdfrom as applied_to_source_so_id, ' +
+                    '       BUILTIN.DF(inv_line.createdfrom) as applied_to_source_so_name ' +
+                    'FROM transaction t ' +
+                    'LEFT JOIN previousTransactionLineLink source_link ' +
+                    '  ON t.id = source_link.nextdoc AND source_link.linktype = \'DepAppl\' ' +
+                    'LEFT JOIN previousTransactionLineLink applied_link ' +
+                    '  ON t.id = applied_link.nextdoc AND applied_link.linktype = \'Payment\' ' +
+                    'LEFT JOIN transaction inv ON applied_link.previousdoc = inv.id ' +
+                    'LEFT JOIN transactionline inv_line ON inv.id = inv_line.transaction AND inv_line.mainline = \'T\' ' +
+                    'WHERE t.entity = ' + customerId + ' ' +
+                    'AND t.type = \'DepAppl\' ' +
+                    'ORDER BY t.trandate';
+                var depaResults = query.runSuiteQL({ query: depaSql }).asMappedResults();
+                
+                log.debug('getCompleteSalesLifecycle', 'Found ' + depaResults.length + ' deposit applications');
+                
+                // Get customer payments
+                var pymtSql = 
+                    'SELECT pymt.id as payment_id, ' +
+                    '       pymt.tranid as payment_tranid, ' +
+                    '       pymt.trandate as payment_date, ' +
+                    '       pymt.memo as payment_memo, ' +
+                    '       pymt_apply.createdfrom as applied_to_invoice_id, ' +
+                    '       BUILTIN.DF(pymt_apply.createdfrom) as applied_to_invoice_name, ' +
+                    '       ABS(pymt_apply.foreignamount) as applied_amount ' +
+                    'FROM transaction pymt ' +
+                    'INNER JOIN transactionline pymt_main ON pymt.id = pymt_main.transaction AND pymt_main.mainline = \'T\' ' +
+                    'LEFT JOIN transactionline pymt_apply ON pymt.id = pymt_apply.transaction AND pymt_apply.mainline = \'F\' AND pymt_apply.createdfrom IS NOT NULL ' +
+                    'WHERE pymt.entity = ' + customerId + ' ' +
+                    'AND pymt.type = \'CustPymt\' ' +
+                    'ORDER BY pymt.trandate';
+                var pymtResults = query.runSuiteQL({ query: pymtSql }).asMappedResults();
+                
+                log.debug('getCompleteSalesLifecycle', 'Found ' + pymtResults.length + ' customer payments');
+                
+                // Build lookups
+                var depositsBySO = {};
+                var invoicesBySO = {};
+                var depApplsByDeposit = {};
+                var paymentsByInvoice = {};
+                
+                for (var i = 0; i < cdResults.length; i++) {
+                    var cd = cdResults[i];
+                    var soIdKey = cd.so_id ? String(cd.so_id) : 'UNLINKED';
+                    if (!depositsBySO[soIdKey]) depositsBySO[soIdKey] = [];
+                    depositsBySO[soIdKey].push(cd);
+                }
+                
+                for (var i = 0; i < invResults.length; i++) {
+                    var inv = invResults[i];
+                    var soIdKey = inv.so_id ? String(inv.so_id) : 'UNLINKED';
+                    if (!invoicesBySO[soIdKey]) invoicesBySO[soIdKey] = [];
+                    invoicesBySO[soIdKey].push(inv);
+                }
+                
+                for (var i = 0; i < depaResults.length; i++) {
+                    var depa = depaResults[i];
+                    var depIdKey = String(depa.source_deposit_id);
+                    if (!depApplsByDeposit[depIdKey]) depApplsByDeposit[depIdKey] = [];
+                    depApplsByDeposit[depIdKey].push(depa);
+                }
+                
+                // Build depasByInvoice lookup for showing payment details on invoices
+                var depasByInvoice = {};
+                for (var i = 0; i < depaResults.length; i++) {
+                    var depa = depaResults[i];
+                    if (depa.applied_to_id) {
+                        var invIdKey = String(depa.applied_to_id);
+                        if (!depasByInvoice[invIdKey]) depasByInvoice[invIdKey] = [];
+                        depasByInvoice[invIdKey].push(depa);
+                    }
+                }
+                
+                for (var i = 0; i < pymtResults.length; i++) {
+                    var pymt = pymtResults[i];
+                    if (pymt.applied_to_invoice_id) {
+                        var invIdKey = String(pymt.applied_to_invoice_id);
+                        if (!paymentsByInvoice[invIdKey]) paymentsByInvoice[invIdKey] = [];
+                        paymentsByInvoice[invIdKey].push(pymt);
+                    }
+                }
+                
+                // Build lifecycle structure
+                var salesOrders = [];
+                var unlinkedDeposits = [];
+                var totalDepositsCollected = 0;
+                var totalDepositsApplied = 0;
+                var totalInvoiced = 0;
+                var totalARReductions = 0;
+                
+                // Process each SO
+                for (var i = 0; i < soResults.length; i++) {
+                    var so = soResults[i];
+                    var soIdKey = String(so.id);
+                    var soDeposits = depositsBySO[soIdKey] || [];
+                    var soInvoices = invoicesBySO[soIdKey] || [];
+                    
+                    var transactions = [];
+                    var soDepositTotal = 0;
+                    var soDepositApplied = 0;
+                    var soInvoicedTotal = 0;
+                    var soARReductions = 0;
+                    
+                    // Process deposits and DEPAs
+                    for (var j = 0; j < soDeposits.length; j++) {
+                        var dep = soDeposits[j];
+                        var depAmount = parseFloat(dep.cd_amount) || 0;
+                        soDepositTotal += depAmount;
+                        totalDepositsCollected += depAmount;
+                        
+                        transactions.push({
+                            type: 'CD',
+                            id: dep.cd_id,
+                            tranid: dep.cd_tranid,
+                            date: dep.cd_date,
+                            depositAmount: depAmount,
+                            arAmount: 0,
+                            appliedTo: '',
+                            status: 'Collected',
+                            indent: '  └ ',
+                            isChild: true
+                        });
+                        
+                        // Get DEPAs for this deposit
+                        var depas = depApplsByDeposit[String(dep.cd_id)] || [];
+                        for (var k = 0; k < depas.length; k++) {
+                            var depa = depas[k];
+                            var depaAmount = -Math.abs(parseFloat(depa.applied_amount) || 0);
+                            soDepositApplied += depaAmount;
+                            soARReductions += depaAmount;
+                            totalDepositsApplied += depaAmount;
+                            totalARReductions += depaAmount;
+                            
+                            var appliedTo = depa.applied_to_name || '';
+                            var isOverpay = depa.applied_to_memo && depa.applied_to_memo.indexOf('OVERPAY') >= 0;
+                            
+                            transactions.push({
+                                type: 'DEPA',
+                                id: depa.id,
+                                tranid: depa.deposit_application_id,
+                                date: depa.trandate,
+                                depositAmount: depaAmount,
+                                arAmount: depaAmount,
+                                appliedTo: appliedTo,
+                                status: isOverpay ? 'Overpayment' : 'Applied',
+                                indent: '      → ',
+                                isChild: true,
+                                isOverpayment: isOverpay
+                            });
+                        }
+                    }
+                    
+                    // Process invoices and payments
+                    for (var j = 0; j < soInvoices.length; j++) {
+                        var inv = soInvoices[j];
+                        var invAmount = parseFloat(inv.inv_amount) || 0;
+                        soInvoicedTotal += invAmount;
+                        totalInvoiced += invAmount;
+                        
+                        var invStatusText = inv.inv_status_text || '';
+                        if (inv.inv_terms_name) {
+                            invStatusText += ' [' + inv.inv_terms_name + ']';
+                        }
+                        
+                        // Build Application Details showing CD → DEPA trail
+                        var invAppDetails = '';
+                        var invDepas = depasByInvoice[String(inv.inv_id)] || [];
+                        var invPymts = paymentsByInvoice[String(inv.inv_id)] || [];
+                        
+                        if (invDepas.length > 0 || invPymts.length > 0) {
+                            var appParts = [];
+                            for (var k = 0; k < invDepas.length; k++) {
+                                var d = invDepas[k];
+                                var amt = Math.abs(parseFloat(d.applied_amount) || 0);
+                                var cdName = d.source_deposit_name ? d.source_deposit_name.replace('Customer Deposit #', '') : 'CD' + d.source_deposit_id;
+                                var depaName = d.deposit_application_id || 'DEPA' + d.id;
+                                appParts.push(cdName + ' → ' + depaName + ' ($' + amt.toFixed(2).replace(/\d(?=(\d{3})+\.)/g, '$&,') + ')');
+                            }
+                            for (var k = 0; k < invPymts.length; k++) {
+                                var p = invPymts[k];
+                                var amt = Math.abs(parseFloat(p.applied_amount) || 0);
+                                var pymtName = p.payment_tranid || 'PYMT' + p.payment_id;
+                                appParts.push(pymtName + ' ($' + amt.toFixed(2).replace(/\d(?=(\d{3})+\.)/g, '$&,') + ')');
+                            }
+                            invAppDetails = 'Paid by: ' + appParts.join(', ');
+                        }
+                        
+                        transactions.push({
+                            type: 'INV',
+                            id: inv.inv_id,
+                            tranid: inv.inv_tranid,
+                            date: inv.inv_date,
+                            depositAmount: 0,
+                            arAmount: invAmount,
+                            appliedTo: invAppDetails,
+                            status: invStatusText,
+                            indent: '  └ ',
+                            isChild: true
+                        });
+                        
+                        // Note: Payments are now included in invAppDetails above, so we don't push them separately
+                        // This avoids duplication since they're already shown in the invoice's Application Details
+                    }
+                    
+                    // Sort transactions chronologically by parent date (CD date or INV date)
+                    // Group children with their parents
+                    var sortedTransactions = [];
+                    var parentTxns = [];
+                    
+                    // Identify all parent transactions (CDs and INVs)
+                    for (var j = 0; j < transactions.length; j++) {
+                        var txn = transactions[j];
+                        if (txn.type === 'CD' || txn.type === 'INV') {
+                            parentTxns.push(txn);
+                        }
+                    }
+                    
+                    // Sort parents by date
+                    parentTxns.sort(function(a, b) {
+                        return new Date(a.date) - new Date(b.date);
+                    });
+                    
+                    // Build sorted list with children following parents
+                    for (var j = 0; j < parentTxns.length; j++) {
+                        var parent = parentTxns[j];
+                        sortedTransactions.push(parent);
+                        
+                        // Add children (DEPAs for CDs)
+                        if (parent.type === 'CD') {
+                            for (var k = 0; k < transactions.length; k++) {
+                                var txn = transactions[k];
+                                if (txn.type === 'DEPA') {
+                                    // Check if this DEPA came from this CD by looking at source_deposit_id
+                                    var cdDepas = depApplsByDeposit[String(parent.id)] || [];
+                                    for (var m = 0; m < cdDepas.length; m++) {
+                                        if (cdDepas[m].id === txn.id) {
+                                            sortedTransactions.push(txn);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    transactions = sortedTransactions;
+                    
+                    // Calculate subtotals
+                    var netDeposit = round(soDepositTotal + soDepositApplied);
+                    var netAR = round(soInvoicedTotal + soARReductions);
+                    
+                    var subtotalStatus;
+                    if (netDeposit > 0.01) {
+                        subtotalStatus = 'UNAPPLIED DEP: ' + formatCurrency(netDeposit);
+                    } else if (netAR > 0.01) {
+                        subtotalStatus = 'OPEN A/R: ' + formatCurrency(netAR);
+                    } else {
+                        subtotalStatus = 'BALANCED';
+                    }
+                    
+                    salesOrders.push({
+                        soId: so.id,
+                        soTranid: so.tranid,
+                        soDate: so.trandate,
+                        soAmount: parseFloat(so.amount) || 0,
+                        soStatus: so.status,
+                        soStatusText: so.status_text,
+                        transactions: transactions,
+                        subtotal: {
+                            soAmount: round(parseFloat(so.amount) || 0),
+                            netDeposit: netDeposit,
+                            netAR: netAR,
+                            status: subtotalStatus,
+                            balanced: (Math.abs(netDeposit) <= 0.01 && Math.abs(netAR) <= 0.01)
+                        }
+                    });
+                }
+                
+                // Process unlinked deposits
+                var unlinked = depositsBySO['UNLINKED'] || [];
+                for (var i = 0; i < unlinked.length; i++) {
+                    var unlDep = unlinked[i];
+                    var unlDepAmount = parseFloat(unlDep.cd_amount) || 0;
+                    totalDepositsCollected += unlDepAmount;
+                    
+                    unlinkedDeposits.push({
+                        type: 'CD',
+                        id: unlDep.cd_id,
+                        tranid: unlDep.cd_tranid,
+                        date: unlDep.cd_date,
+                        depositAmount: unlDepAmount,
+                        arAmount: 0,
+                        appliedTo: '',
+                        status: 'Unlinked',
+                        indent: '',
+                        isChild: false
+                    });
+                }
+                
+                var result = {
+                    customerId: customerId,
+                    customerName: customerName,
+                    depositBalance: depositBalance,
+                    arBalance: arBalance,
+                    salesOrders: salesOrders,
+                    unlinkedDeposits: unlinkedDeposits,
+                    totals: {
+                        totalDepositsCollected: totalDepositsCollected,
+                        totalDepositsApplied: totalDepositsApplied,
+                        netDepositBalance: round(totalDepositsCollected + totalDepositsApplied),
+                        totalInvoiced: totalInvoiced,
+                        totalARReductions: totalARReductions,
+                        netARBalance: round(totalInvoiced + totalARReductions),
+                        summary: 'Sum of all SO activity'
+                    }
+                };
+                
+                log.debug('getCompleteSalesLifecycle', 'Result: ' + JSON.stringify(result.totals));
+                
+                return result;
+                
+            } catch (e) {
+                log.error('Error in getCompleteSalesLifecycle', e.toString());
+                return { 
+                    error: e.toString()
+                };
+            }
+        }
+        
+        /**
+         * Helper: Round to 2 decimal places
+         * @param {number} num - Number to round
+         * @returns {number} Rounded number
+         */
+        function round(num) {
+            return Math.round(num * 100) / 100;
+        }
+        
+        /**
+         * Helper: Format currency
+         * @param {number} amount - Amount to format
+         * @returns {string} Formatted currency string
+         */
+        function formatCurrency(amount) {
+            if (amount == null || isNaN(amount)) return '$0.00';
+            var abs = Math.abs(amount);
+            var formatted = '$' + abs.toFixed(2).replace(/\d(?=(\d{3})+\.)/g, '$&,');
+            return amount < 0 ? '-' + formatted : formatted;
         }
 
         return {
