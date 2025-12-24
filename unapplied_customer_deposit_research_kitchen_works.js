@@ -1407,7 +1407,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 /* Unified Explain Modal */
                 '.comparison-modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 99998; }' +
                 '.comparison-modal-overlay.visible { display: block; }' +
-                '.comparison-modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border-radius: 10px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); z-index: 99999; width: 95%; max-width: 1400px; max-height: 90vh; overflow: hidden; }' +
+                '.comparison-modal { display: none; position: fixed; top: 5vh; left: 50%; margin-left: -700px; background: white; border-radius: 10px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); z-index: 99999; width: 95%; max-width: 1400px; max-height: 90vh; }' +
                 '.comparison-modal.visible { display: block; }' +
                 '.comparison-modal-content { display: flex; flex-direction: column; height: 100%; max-height: 90vh; }' +
                 '.explain-modal-content { max-width: 1400px; }' +
@@ -1423,7 +1423,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '.tab-button.active { color: #6366f1; border-bottom-color: #6366f1; background: white; }' +
                 
                 /* Tab Content */
-                '.comparison-modal-body { padding: 20px; overflow-y: auto; flex: 1; }' +
+                '.comparison-modal-body { padding: 20px; overflow-y: auto; flex: 1; position: relative; }' +
                 '.tab-content { display: none; }' +
                 '.tab-content.active { display: block; }' +
                 '.comparison-loading { text-align: center; padding: 60px 20px; color: #666; font-size: 16px; }' +
@@ -1458,9 +1458,11 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 /* Comparison Table */
                 '.comparison-table-container { overflow-x: auto; }' +
                 '.comparison-table { width: 100%; border-collapse: collapse; font-size: 13px; }' +
-                '.comparison-table th { background: #f8f9fa; padding: 10px 8px; text-align: left; font-weight: 600; border-bottom: 2px solid #dee2e6; position: sticky; top: 0; }' +
+                '.comparison-table th { background: #f8f9fa; padding: 10px 8px; text-align: left; font-weight: 600; border-bottom: 2px solid #dee2e6; position: sticky; top: -20px; z-index: 10; }' +
+                '.lifecycle-table thead th { background: #2c3e50; color: #fff; position: sticky; top: -20px; z-index: 10; }' +
                 '.comparison-table td { padding: 8px; border-bottom: 1px solid #eee; }' +
                 '.comparison-table tr:hover td { background: #f5f5f5; }' +
+                '.comparison-table tr.comparison-totals:hover td { background: inherit; }' +
                 '.comparison-table .amount { text-align: right; font-family: monospace; }' +
 
                 /* Sales Order Totals Visual Column Grouping */
@@ -2595,9 +2597,8 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    html += "</div>";' +
                 '    ' +
                 '    /* Lifecycle Table */' +
-                '    html += "<div class=\\"comparison-table-container\\">";' +
                 '    html += "<table class=\\"comparison-table lifecycle-table\\" style=\\"font-size:13px;\\">";' +
-                '    html += "<thead><tr style=\\"background:#2c3e50;color:#000;\\">";' +
+                '    html += "<thead><tr style=\\"background:#2c3e50;color:#fff;\\">";' +
                 '    html += "<th style=\\"text-align:left;padding:12px 8px;width:100px;\\">SO</th>";' +
                 '    html += "<th style=\\"text-align:left;padding:12px 8px;width:200px;\\">TRANSACTION</th>";' +
                 '    html += "<th style=\\"text-align:center;padding:12px 8px;width:60px;\\">TYPE</th>";' +
@@ -2714,9 +2715,22 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '        html += "<tr class=\\"subtotal-row\\" style=\\"background:#e8e8e8;border-bottom:2px solid #2c3e50;font-weight:600;\\">";' +
                 '        html += "<td colspan=\\"2\\" style=\\"padding:10px 8px;\\">SUBTOTAL " + so.soTranid + "</td>";' +
                 '        html += "<td colspan=\\"2\\" style=\\"text-align:right;padding:10px 8px;color:#7f8c8d;font-size:12px;\\">" + subtotal.status + "</td>";' +
-                '        html += "<td class=\\"amount\\" style=\\"padding:10px 8px;\\">" + formatCompCurrency(subtotal.netOrderValue || 0) + "</td>";' +
-                '        html += "<td class=\\"amount\\" style=\\"padding:10px 8px;\\">" + formatCompCurrency(subtotal.netDeposit || 0) + "</td>";' +
-                '        html += "<td class=\\"amount\\" style=\\"padding:10px 8px;\\">" + formatCompCurrency(subtotal.netAR || 0) + "</td>";' +
+                '        ' +
+                '        /* Order Value */' +
+                '        var ovVal = subtotal.netOrderValue || 0;' +
+                '        var ovFormatted = Math.abs(ovVal) < 0.01 ? "$0.00" : (ovVal < 0 ? "($" + Math.abs(ovVal).toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ",") + ")" : "$" + ovVal.toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ","));' +
+                '        html += "<td class=\\"amount\\" style=\\"padding:10px 8px;\\">" + ovFormatted + "</td>";' +
+                '        ' +
+                '        /* Deposit Balance */' +
+                '        var depVal = subtotal.netDeposit || 0;' +
+                '        var depFormatted = Math.abs(depVal) < 0.01 ? "$0.00" : (depVal < 0 ? "($" + Math.abs(depVal).toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ",") + ")" : "$" + depVal.toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ","));' +
+                '        html += "<td class=\\"amount\\" style=\\"padding:10px 8px;\\">" + depFormatted + "</td>";' +
+                '        ' +
+                '        /* A/R Balance */' +
+                '        var arVal = subtotal.netAR || 0;' +
+                '        var arFormatted = Math.abs(arVal) < 0.01 ? "$0.00" : (arVal < 0 ? "($" + Math.abs(arVal).toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ",") + ")" : "$" + arVal.toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ","));' +
+                '        html += "<td class=\\"amount\\" style=\\"padding:10px 8px;\\">" + arFormatted + "</td>";' +
+                '        ' +
                 '        html += "<td colspan=\\"2\\" style=\\"padding:10px 8px;\\"></td>";' +
                 '        html += "</tr>";' +
                 '    }' +
@@ -2750,13 +2764,26 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    /* Grand Totals Row */' +
                 '    html += "<tr class=\\"comparison-totals\\" style=\\"background:#2c3e50;color:#fff;font-size:15px;font-weight:700;\\">";' +
                 '    html += "<td colspan=\\"4\\" style=\\"padding:12px 8px;\\">SO LIFECYCLE TOTALS</td>";' +
-                '    html += "<td class=\\"amount\\" style=\\"padding:12px 8px;background:#2196f3;color:#fff;\\">" + formatCompCurrency(totals.netOrderValue || 0) + "</td>";' +
-                '    html += "<td class=\\"amount\\" style=\\"padding:12px 8px;background:#28a745;color:#fff;\\">" + formatCompCurrency(totals.netDepositBalance || 0) + "</td>";' +
-                '    html += "<td class=\\"amount\\" style=\\"padding:12px 8px;background:#ffc107;color:#000;\\">" + formatCompCurrency(totals.netARBalance || 0) + "</td>";' +
+                '    ' +
+                '    /* Order Value Total */' +
+                '    var totOvVal = totals.netOrderValue || 0;' +
+                '    var totOvFormatted = Math.abs(totOvVal) < 0.01 ? "$0.00" : (totOvVal < 0 ? "($" + Math.abs(totOvVal).toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ",") + ")" : "$" + totOvVal.toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ","));' +
+                '    html += "<td class=\\"amount\\" style=\\"padding:12px 8px;background:#2196f3;color:#fff;\\">" + totOvFormatted + "</td>";' +
+                '    ' +
+                '    /* Deposit Balance Total */' +
+                '    var totDepVal = totals.netDepositBalance || 0;' +
+                '    var totDepFormatted = Math.abs(totDepVal) < 0.01 ? "$0.00" : (totDepVal < 0 ? "($" + Math.abs(totDepVal).toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ",") + ")" : "$" + totDepVal.toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ","));' +
+                '    html += "<td class=\\"amount\\" style=\\"padding:12px 8px;background:#28a745;color:#fff;\\">" + totDepFormatted + "</td>";' +
+                '    ' +
+                '    /* A/R Balance Total */' +
+                '    var totArVal = totals.netARBalance || 0;' +
+                '    var totArFormatted = Math.abs(totArVal) < 0.01 ? "$0.00" : (totArVal < 0 ? "($" + Math.abs(totArVal).toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ",") + ")" : "$" + totArVal.toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ","));' +
+                '    html += "<td class=\\"amount\\" style=\\"padding:12px 8px;background:#ffc107;color:#000;\\">" + totArFormatted + "</td>";' +
+                '    ' +
                 '    html += "<td colspan=\\"2\\" style=\\"padding:12px 8px;text-align:right;font-size:13px;\\">" + totals.summary + "</td>";' +
                 '    html += "</tr>";' +
                 '    ' +
-                '    html += "</tbody></table></div>";' +
+                '    html += "</tbody></table>";' +
                 '    ' +
                 '    body.innerHTML = html;' +
                 '    ' +
@@ -6235,7 +6262,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                     'SELECT t.id, ' +
                     '       t.tranid as deposit_application_id, ' +
                     '       t.trandate, ' +
-                    '       t.foreigntotal as applied_amount, ' +
+                    '       applied_link.foreignamount as applied_amount, ' +
                     '       source_link.previousdoc as source_deposit_id, ' +
                     '       BUILTIN.DF(source_link.previousdoc) as source_deposit_name, ' +
                     '       applied_link.previousdoc as applied_to_id, ' +
@@ -6247,7 +6274,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                     'FROM transaction t ' +
                     'LEFT JOIN previousTransactionLineLink source_link ' +
                     '  ON t.id = source_link.nextdoc AND source_link.linktype = \'DepAppl\' ' +
-                    'LEFT JOIN previousTransactionLineLink applied_link ' +
+                    'INNER JOIN previousTransactionLineLink applied_link ' +
                     '  ON t.id = applied_link.nextdoc AND applied_link.linktype = \'Payment\' ' +
                     'LEFT JOIN transaction inv ON applied_link.previousdoc = inv.id ' +
                     'LEFT JOIN transactionline inv_line ON inv.id = inv_line.transaction AND inv_line.mainline = \'T\' ' +
