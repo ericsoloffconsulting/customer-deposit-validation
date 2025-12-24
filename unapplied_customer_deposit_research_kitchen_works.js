@@ -2591,7 +2591,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    var arBalance = data.arBalance || 0;' +
                 '    html += "<div class=\\"comparison-summary\\">";' +
                 '    html += "<div class=\\"comparison-card\\"><div class=\\"comparison-card-label\\">Total SO Value</div><div class=\\"comparison-card-value\\">" + formatCompCurrency(totals.totalSalesOrderValue || 0) + "</div></div>";' +
-                '    html += "<div class=\\"comparison-card\\"><div class=\\"comparison-card-label\\">Total Invoiced</div><div class=\\"comparison-card-value\\">" + formatCompCurrency(totals.totalInvoiced || 0) + "</div></div>";' +
+                '    html += "<div class=\\"comparison-card\\"><div class=\\"comparison-card-label\\">Total SO Invoiced</div><div class=\\"comparison-card-value\\">" + formatCompCurrency(totals.totalInvoiced || 0) + "</div></div>";' +
                 '    html += "<div class=\\"comparison-card " + (Math.abs(totals.netOrderValue || 0) < 0.01 ? "success" : "warning") + "\\"><div class=\\"comparison-card-label\\">Remaining Unbilled</div><div class=\\"comparison-card-value\\">" + formatCompCurrency(totals.netOrderValue || 0) + "</div></div>";' +
                 '    html += "<div class=\\"comparison-card " + (Math.abs(totals.netDepositBalance || 0) < 0.01 && Math.abs(totals.netARBalance || 0) < 0.01 ? "success" : "warning") + "\\"><div class=\\"comparison-card-label\\">Overall Status</div><div class=\\"comparison-card-value\\" style=\\"font-size:14px;\\">" + (Math.abs(totals.netDepositBalance || 0) < 0.01 && Math.abs(totals.netARBalance || 0) < 0.01 ? "BALANCED" : "OPEN") + "</div></div>";' +
                 '    html += "</div>";' +
@@ -2761,6 +2761,136 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '        }' +
                 '    }' +
                 '    ' +
+                '    /* Standalone Transactions (Not Linked to Sales Orders) */' +
+                '    var standalone = data.standaloneTransactions || {};' +
+                '    var standaloneInvoices = standalone.invoices || [];' +
+                '    var crossTrailDepas = standalone.depas || [];' +
+                '    var cmsBySourceInvoice = standalone.creditMemos || {};' +
+                '    ' +
+                '    if (standaloneInvoices.length > 0 || crossTrailDepas.length > 0) {' +
+                '        html += "<tr style=\\"background:#e3f2fd;border-top:3px solid #2196f3;\\">";' +
+                '        html += "<td colspan=\\"9\\" style=\\"padding:12px 8px;font-weight:600;color:#1976d2;font-size:13px;\\">📋 TRANSACTIONS NOT LINKED TO SALES ORDERS</td>";' +
+                '        html += "</tr>";' +
+                '        html += "<tr style=\\"background:#e3f2fd;\\">";' +
+                '        html += "<td colspan=\\"9\\" style=\\"padding:4px 8px 8px 8px;font-size:12px;color:#666;\\">Invoices created without a sales order, DEPAs from SO deposits applied to these invoices, and related credit memos</td>";' +
+                '        html += "</tr>";' +
+                '        ' +
+                '        /* Group DEPAs by applied invoice */' +
+                '        var depasByInvoice = {};' +
+                '        for (var d = 0; d < crossTrailDepas.length; d++) {' +
+                '            var depa = crossTrailDepas[d];' +
+                '            var invIdKey = String(depa.applied_to_id);' +
+                '            if (!depasByInvoice[invIdKey]) depasByInvoice[invIdKey] = [];' +
+                '            depasByInvoice[invIdKey].push(depa);' +
+                '        }' +
+                '        ' +
+                '        /* Display each standalone invoice with its DEPAs and CMs */' +
+                '        for (var s = 0; s < standaloneInvoices.length; s++) {' +
+                '            var standaloneInv = standaloneInvoices[s];' +
+                '            var invAmount = parseFloat(standaloneInv.inv_amount) || 0;' +
+                '            rowNum++;' +
+                '            var bgColor = rowNum % 2 === 0 ? "#ffffff" : "#f8f9fa";' +
+                '            ' +
+                '            /* Invoice row */' +
+                '            html += "<tr style=\\"background:" + bgColor + ";\\">";' +
+                '            html += "<td style=\\"padding:8px;color:#666;font-style:italic;\\">NON-SO</td>";' +
+                '            html += "<td style=\\"padding:8px;\\"><a href=\\"/app/accounting/transactions/transaction.nl?id=" + standaloneInv.inv_id + "\\" target=\\"_blank\\">" + standaloneInv.inv_tranid + "</a></td>";' +
+                '            html += "<td style=\\"text-align:center;padding:8px;\\"><span class=\\"status-badge\\" style=\\"background:#ffc107;color:#000;padding:4px 8px;border-radius:4px;font-size:11px;font-weight:600;\\">INV</span></td>";' +
+                '            html += "<td style=\\"text-align:center;padding:8px;color:#666;font-size:12px;\\">" + standaloneInv.inv_date + "</td>";' +
+                '            html += "<td class=\\"amount\\" style=\\"padding:8px;\\">-</td>";' +
+                '            html += "<td class=\\"amount\\" style=\\"padding:8px;\\">-</td>";' +
+                '            html += "<td class=\\"amount\\" style=\\"padding:8px;color:#000;\\">" + formatCompCurrency(invAmount) + "</td>";' +
+                '            html += "<td style=\\"padding:8px;font-size:12px;color:#666;\\"></td>";' +
+                '            html += "<td style=\\"padding:8px;font-size:12px;color:#666;\\">" + (standaloneInv.inv_status_text || "") + "</td>";' +
+                '            html += "</tr>";' +
+                '            ' +
+                '            /* DEPAs applied to this invoice */' +
+                '            var invDepas = depasByInvoice[String(standaloneInv.inv_id)] || [];' +
+                '            for (var d = 0; d < invDepas.length; d++) {' +
+                '                var depa = invDepas[d];' +
+                '                var depaAmount = -Math.abs(parseFloat(depa.applied_amount) || 0);' +
+                '                rowNum++;' +
+                '                bgColor = rowNum % 2 === 0 ? "#ffffff" : "#f8f9fa";' +
+                '                ' +
+                '                /* Format DEPA amounts with parentheses */' +
+                '                var depAmtFormatted = Math.abs(depaAmount) < 0.01 ? "-" : (depaAmount < 0 ? "($" + Math.abs(depaAmount).toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ",") + ")" : "$" + depaAmount.toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ","));' +
+                '                ' +
+                '                html += "<tr style=\\"background:" + bgColor + ";\\">";' +
+                '                html += "<td style=\\"padding:8px;\\"></td>";' +
+                '                html += "<td style=\\"padding:8px;padding-left:60px;\\">↳ <a href=\\"/app/accounting/transactions/transaction.nl?id=" + depa.id + "\\" target=\\"_blank\\">" + depa.deposit_application_id + "</a></td>";' +
+                '                html += "<td style=\\"text-align:center;padding:8px;\\"><span class=\\"status-badge\\" style=\\"background:#17a2b8;color:#fff;padding:4px 8px;border-radius:4px;font-size:11px;font-weight:600;\\">DEPA</span></td>";' +
+                '                html += "<td style=\\"text-align:center;padding:8px;color:#666;font-size:12px;\\">" + depa.trandate + "</td>";' +
+                '                html += "<td class=\\"amount\\" style=\\"padding:8px;\\">-</td>";' +
+                '                html += "<td class=\\"amount\\" style=\\"padding:8px;color:#000;\\">" + depAmtFormatted + "</td>";' +
+                '                html += "<td class=\\"amount\\" style=\\"padding:8px;color:#000;\\">" + depAmtFormatted + "</td>";' +
+                '                html += "<td style=\\"padding:8px;font-size:12px;color:#666;max-width:180px;word-wrap:break-word;white-space:normal;\\">" + (depa.source_deposit_name || "") + " (from " + (depa.cd_source_so_name || "Unknown SO") + ")</td>";' +
+                '                html += "<td style=\\"padding:8px;font-size:12px;color:#17a2b8;\\">Cross-Trail Applied</td>";' +
+                '                html += "</tr>";' +
+                '            }' +
+                '            ' +
+                '            /* Credit memos from this invoice */' +
+                '            var invCMs = cmsBySourceInvoice[String(standaloneInv.inv_id)] || [];' +
+                '            for (var c = 0; c < invCMs.length; c++) {' +
+                '                var cm = invCMs[c];' +
+                '                var cmAmount = parseFloat(cm.cm_amount) || 0;' +
+                '                rowNum++;' +
+                '                bgColor = rowNum % 2 === 0 ? "#ffffff" : "#f8f9fa";' +
+                '                ' +
+                '                /* Format CM amounts with parentheses (always negative) */' +
+                '                var cmAmtFormatted = Math.abs(cmAmount) < 0.01 ? "-" : (cmAmount < 0 ? "($" + Math.abs(cmAmount).toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ",") + ")" : "($" + cmAmount.toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ",") + ")");' +
+                '                ' +
+                '                html += "<tr style=\\"background:" + bgColor + ";\\">";' +
+                '                html += "<td style=\\"padding:8px;\\"></td>";' +
+                '                html += "<td style=\\"padding:8px;padding-left:60px;\\">↳ <a href=\\"/app/accounting/transactions/transaction.nl?id=" + cm.cm_id + "\\" target=\\"_blank\\">" + cm.cm_tranid + "</a></td>";' +
+                '                html += "<td style=\\"text-align:center;padding:8px;\\"><span class=\\"status-badge\\" style=\\"background:#dc3545;color:#fff;padding:4px 8px;border-radius:4px;font-size:11px;font-weight:600;\\">CM</span></td>";' +
+                '                html += "<td style=\\"text-align:center;padding:8px;color:#666;font-size:12px;\\">" + cm.cm_date + "</td>";' +
+                '                html += "<td class=\\"amount\\" style=\\"padding:8px;\\">-</td>";' +
+                '                html += "<td class=\\"amount\\" style=\\"padding:8px;\\">-</td>";' +
+                '                html += "<td class=\\"amount\\" style=\\"padding:8px;color:#000;\\">" + cmAmtFormatted + "</td>";' +
+                '                html += "<td style=\\"padding:8px;font-size:12px;color:#666;\\">" + (cm.cm_memo || "") + "</td>";' +
+                '                html += "<td style=\\"padding:8px;font-size:12px;color:#dc3545;\\">Credit Issued</td>";' +
+                '                html += "</tr>";' +
+                '            }' +
+                '        }' +
+                '        ' +
+                '        /* Subtotal for Standalone Transactions */' +
+                '        var standaloneInvTotal = 0;' +
+                '        var standaloneDepaTotal = 0;' +
+                '        var standaloneCMTotal = 0;' +
+                '        ' +
+                '        for (var s = 0; s < standaloneInvoices.length; s++) {' +
+                '            standaloneInvTotal += parseFloat(standaloneInvoices[s].inv_amount) || 0;' +
+                '        }' +
+                '        ' +
+                '        for (var d = 0; d < crossTrailDepas.length; d++) {' +
+                '            standaloneDepaTotal += -Math.abs(parseFloat(crossTrailDepas[d].applied_amount) || 0);' +
+                '        }' +
+                '        ' +
+                '        for (var invId in cmsBySourceInvoice) {' +
+                '            var cms = cmsBySourceInvoice[invId];' +
+                '            for (var c = 0; c < cms.length; c++) {' +
+                '                standaloneCMTotal += -(Math.abs(parseFloat(cms[c].cm_amount) || 0));' +
+                '            }' +
+                '        }' +
+                '        ' +
+                '        var standaloneNetDeposit = standaloneDepaTotal;' +
+                '        var standaloneNetAR = standaloneInvTotal + standaloneDepaTotal + standaloneCMTotal;' +
+                '        ' +
+                '        html += "<tr class=\\"subtotal-row\\" style=\\"background:#d1ecf1;border-top:2px solid #1976d2;border-bottom:2px solid #1976d2;font-weight:600;\\">";' +
+                '        html += "<td colspan=\\"2\\" style=\\"padding:10px 8px;color:#1976d2;\\">SUBTOTAL NON-SO TRANSACTIONS</td>";' +
+                '        html += "<td colspan=\\"2\\" style=\\"text-align:right;padding:10px 8px;color:#666;font-size:12px;\\">Invoices: $" + standaloneInvTotal.toFixed(2) + " | DEPAs: ($" + Math.abs(standaloneDepaTotal).toFixed(2) + ") | CMs: ($" + Math.abs(standaloneCMTotal).toFixed(2) + ")</td>";' +
+                '        html += "<td class=\\"amount\\" style=\\"padding:10px 8px;\\">-</td>";' +
+                '        ' +
+                '        var stDepFormatted = Math.abs(standaloneNetDeposit) < 0.01 ? "$0.00" : (standaloneNetDeposit < 0 ? "($" + Math.abs(standaloneNetDeposit).toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ",") + ")" : "$" + standaloneNetDeposit.toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ","));' +
+                '        html += "<td class=\\"amount\\" style=\\"padding:10px 8px;color:#1976d2;\\">" + stDepFormatted + "</td>";' +
+                '        ' +
+                '        var stArFormatted = Math.abs(standaloneNetAR) < 0.01 ? "$0.00" : (standaloneNetAR < 0 ? "($" + Math.abs(standaloneNetAR).toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ",") + ")" : "$" + standaloneNetAR.toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ","));' +
+                '        html += "<td class=\\"amount\\" style=\\"padding:10px 8px;color:#1976d2;\\">" + stArFormatted + "</td>";' +
+                '        ' +
+                '        html += "<td colspan=\\"2\\" style=\\"padding:10px 8px;\\"></td>";' +
+                '        html += "</tr>";' +
+                '    }' +
+                '    ' +
                 '    /* Grand Totals Row */' +
                 '    html += "<tr class=\\"comparison-totals\\" style=\\"background:#2c3e50;color:#fff;font-size:15px;font-weight:700;\\">";' +
                 '    html += "<td colspan=\\"4\\" style=\\"padding:12px 8px;\\">SO LIFECYCLE TOTALS</td>";' +
@@ -2842,6 +2972,49 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '        for (var k = 0; k < unlinkedDeposits.length; k++) {' +
                 '            var unlinkedDep = unlinkedDeposits[k];' +
                 '            rows.push(["UNLINKED", unlinkedDep.tranid, unlinkedDep.type, unlinkedDep.date, "", unlinkedDep.depositAmount, "", unlinkedDep.appliedTo || "", "Unlinked"]);' +
+                '        }' +
+                '    }' +
+                '    ' +
+                '    /* Standalone Transactions */' +
+                '    var standalone = data.standaloneTransactions || {};' +
+                '    var standaloneInvoices = standalone.invoices || [];' +
+                '    var crossTrailDepas = standalone.depas || [];' +
+                '    var cmsBySourceInvoice = standalone.creditMemos || {};' +
+                '    ' +
+                '    if (standaloneInvoices.length > 0 || crossTrailDepas.length > 0) {' +
+                '        rows.push(["", "", "", "", "", "", "", "", ""]);' +
+                '        rows.push(["TRANSACTIONS NOT LINKED TO SALES ORDERS", "", "", "", "", "", "", "", ""]);' +
+                '        ' +
+                '        /* Group DEPAs by applied invoice */' +
+                '        var depasByInvoice = {};' +
+                '        for (var d = 0; d < crossTrailDepas.length; d++) {' +
+                '            var depa = crossTrailDepas[d];' +
+                '            var invIdKey = String(depa.applied_to_id);' +
+                '            if (!depasByInvoice[invIdKey]) depasByInvoice[invIdKey] = [];' +
+                '            depasByInvoice[invIdKey].push(depa);' +
+                '        }' +
+                '        ' +
+                '        for (var s = 0; s < standaloneInvoices.length; s++) {' +
+                '            var standaloneInv = standaloneInvoices[s];' +
+                '            var invAmount = parseFloat(standaloneInv.inv_amount) || 0;' +
+                '            rows.push(["NON-SO", standaloneInv.inv_tranid, "INV", standaloneInv.inv_date, "", "", invAmount, "", standaloneInv.inv_status_text || ""]);' +
+                '            ' +
+                '            /* DEPAs for this invoice */' +
+                '            var invDepas = depasByInvoice[String(standaloneInv.inv_id)] || [];' +
+                '            for (var d = 0; d < invDepas.length; d++) {' +
+                '                var depa = invDepas[d];' +
+                '                var depaAmount = -Math.abs(parseFloat(depa.applied_amount) || 0);' +
+                '                var appliedTo = (depa.source_deposit_name || "") + " (from " + (depa.cd_source_so_name || "Unknown SO") + ")";' +
+                '                rows.push(["", "\u21b3 " + depa.deposit_application_id, "DEPA", depa.trandate, "", depaAmount, depaAmount, appliedTo, "Cross-Trail Applied"]);' +
+                '            }' +
+                '            ' +
+                '            /* Credit memos from this invoice */' +
+                '            var invCMs = cmsBySourceInvoice[String(standaloneInv.inv_id)] || [];' +
+                '            for (var c = 0; c < invCMs.length; c++) {' +
+                '                var cm = invCMs[c];' +
+                '                var cmAmount = parseFloat(cm.cm_amount) || 0;' +
+                '                rows.push(["", "\u21b3 " + cm.cm_tranid, "CM", cm.cm_date, "", "", cmAmount, cm.cm_memo || "", "Credit Issued"]);' +
+                '            }' +
                 '        }' +
                 '    }' +
                 '    ' +
@@ -6265,6 +6438,8 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                     '       applied_link.foreignamount as applied_amount, ' +
                     '       source_link.previousdoc as source_deposit_id, ' +
                     '       BUILTIN.DF(source_link.previousdoc) as source_deposit_name, ' +
+                    '       cd_line.createdfrom as cd_source_so_id, ' +
+                    '       BUILTIN.DF(cd_line.createdfrom) as cd_source_so_name, ' +
                     '       applied_link.previousdoc as applied_to_id, ' +
                     '       BUILTIN.DF(applied_link.previousdoc) as applied_to_name, ' +
                     '       applied_link.previoustype as applied_to_type, ' +
@@ -6274,6 +6449,8 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                     'FROM transaction t ' +
                     'LEFT JOIN previousTransactionLineLink source_link ' +
                     '  ON t.id = source_link.nextdoc AND source_link.linktype = \'DepAppl\' ' +
+                    'LEFT JOIN transaction cd ON source_link.previousdoc = cd.id ' +
+                    'LEFT JOIN transactionline cd_line ON cd.id = cd_line.transaction AND cd_line.mainline = \'T\' ' +
                     'INNER JOIN previousTransactionLineLink applied_link ' +
                     '  ON t.id = applied_link.nextdoc AND applied_link.linktype = \'Payment\' ' +
                     'LEFT JOIN transaction inv ON applied_link.previousdoc = inv.id ' +
@@ -6303,6 +6480,24 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 var pymtResults = query.runSuiteQL({ query: pymtSql }).asMappedResults();
                 
                 log.debug('getCompleteSalesLifecycle', 'Found ' + pymtResults.length + ' customer payments');
+                
+                // Get credit memos
+                var cmSql = 
+                    'SELECT cm.id as cm_id, ' +
+                    '       cm.tranid as cm_tranid, ' +
+                    '       cm.trandate as cm_date, ' +
+                    '       cm.foreigntotal as cm_amount, ' +
+                    '       cm.memo as cm_memo, ' +
+                    '       tl.createdfrom as source_invoice_id, ' +
+                    '       BUILTIN.DF(tl.createdfrom) as source_invoice_name ' +
+                    'FROM transaction cm ' +
+                    'LEFT JOIN transactionline tl ON cm.id = tl.transaction AND tl.mainline = \'T\' ' +
+                    'WHERE cm.entity = ' + customerId + ' ' +
+                    'AND cm.type = \'CustCred\' ' +
+                    'ORDER BY cm.trandate';
+                var cmResults = query.runSuiteQL({ query: cmSql }).asMappedResults();
+                
+                log.debug('getCompleteSalesLifecycle', 'Found ' + cmResults.length + ' credit memos');
                 
                 // Build lookups
                 var depositsBySO = {};
@@ -6350,6 +6545,43 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                         paymentsByInvoice[invIdKey].push(pymt);
                     }
                 }
+                
+                // Identify standalone invoices and cross-trail DEPAs
+                var standaloneInvoices = [];
+                var crossTrailDepas = [];
+                var cmsBySourceInvoice = {};
+                
+                // Build CM lookup by source invoice
+                for (var i = 0; i < cmResults.length; i++) {
+                    var cm = cmResults[i];
+                    if (cm.source_invoice_id) {
+                        var invIdKey = String(cm.source_invoice_id);
+                        if (!cmsBySourceInvoice[invIdKey]) cmsBySourceInvoice[invIdKey] = [];
+                        cmsBySourceInvoice[invIdKey].push(cm);
+                    }
+                }
+                
+                // Identify standalone invoices (no SO source)
+                for (var i = 0; i < invResults.length; i++) {
+                    var inv = invResults[i];
+                    if (!inv.so_id) {
+                        standaloneInvoices.push(inv);
+                    }
+                }
+                
+                // Identify cross-trail DEPAs (CD source SO != invoice source SO)
+                for (var i = 0; i < depaResults.length; i++) {
+                    var depa = depaResults[i];
+                    var cdSourceSO = depa.cd_source_so_id ? String(depa.cd_source_so_id) : null;
+                    var invSourceSO = depa.applied_to_source_so_id ? String(depa.applied_to_source_so_id) : null;
+                    
+                    // Cross-trail if CD has SO source but invoice doesn't, or if they have different SO sources
+                    if (cdSourceSO && (!invSourceSO || cdSourceSO !== invSourceSO)) {
+                        crossTrailDepas.push(depa);
+                    }
+                }
+                
+                log.debug('getCompleteSalesLifecycle', 'Found ' + standaloneInvoices.length + ' standalone invoices and ' + crossTrailDepas.length + ' cross-trail DEPAs');
                 
                 // Build lifecycle structure
                 var salesOrders = [];
@@ -6405,7 +6637,21 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                         var depas = depApplsByDeposit[String(dep.cd_id)] || [];
                         for (var k = 0; k < depas.length; k++) {
                             var depa = depas[k];
+                            
+                            // Check if cross-trail DEPA (CD source SO != invoice source SO)
+                            var cdSourceSO = depa.cd_source_so_id ? String(depa.cd_source_so_id) : null;
+                            var invSourceSO = depa.applied_to_source_so_id ? String(depa.applied_to_source_so_id) : null;
+                            var isCrossTrail = cdSourceSO && (!invSourceSO || cdSourceSO !== invSourceSO);
+                            
                             var depaAmount = -Math.abs(parseFloat(depa.applied_amount) || 0);
+                            
+                            if (isCrossTrail) {
+                                // Cross-trail DEPA: doesn't affect this SO's balances
+                                // Will be tracked separately in standalone section
+                                continue;
+                            }
+                            
+                            // Normal DEPA: affects both deposit and A/R of this SO
                             soDepositApplied += depaAmount;
                             soARReductions += depaAmount;
                             totalDepositsApplied += depaAmount;
@@ -6553,6 +6799,28 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                     });
                 }
                 
+                // Calculate standalone transactions totals
+                var standaloneInvoiceTotal = 0;
+                var standaloneDepaTotal = 0;
+                var standaloneCMTotal = 0;
+                
+                for (var i = 0; i < standaloneInvoices.length; i++) {
+                    standaloneInvoiceTotal += parseFloat(standaloneInvoices[i].inv_amount) || 0;
+                }
+                
+                for (var i = 0; i < crossTrailDepas.length; i++) {
+                    standaloneDepaTotal += -Math.abs(parseFloat(crossTrailDepas[i].applied_amount) || 0);
+                }
+                
+                for (var invId in cmsBySourceInvoice) {
+                    var cms = cmsBySourceInvoice[invId];
+                    for (var j = 0; j < cms.length; j++) {
+                        standaloneCMTotal += -(Math.abs(parseFloat(cms[j].cm_amount) || 0));
+                    }
+                }
+                
+                log.debug('getCompleteSalesLifecycle', 'Standalone totals - Invoices: ' + standaloneInvoiceTotal + ', DEPAs: ' + standaloneDepaTotal + ', CMs: ' + standaloneCMTotal);
+                
                 var result = {
                     customerId: customerId,
                     customerName: customerName,
@@ -6560,13 +6828,18 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                     arBalance: arBalance,
                     salesOrders: salesOrders,
                     unlinkedDeposits: unlinkedDeposits,
+                    standaloneTransactions: {
+                        invoices: standaloneInvoices,
+                        depas: crossTrailDepas,
+                        creditMemos: cmsBySourceInvoice
+                    },
                     totals: {
                         totalDepositsCollected: totalDepositsCollected,
-                        totalDepositsApplied: totalDepositsApplied,
-                        netDepositBalance: round(totalDepositsCollected + totalDepositsApplied),
+                        totalDepositsApplied: totalDepositsApplied + standaloneDepaTotal,
+                        netDepositBalance: round(totalDepositsCollected + totalDepositsApplied + standaloneDepaTotal),
                         totalInvoiced: totalInvoiced,
-                        totalARReductions: totalARReductions,
-                        netARBalance: round(totalInvoiced + totalARReductions),
+                        totalARReductions: totalARReductions + standaloneDepaTotal + standaloneCMTotal,
+                        netARBalance: round(totalInvoiced + standaloneInvoiceTotal + totalARReductions + standaloneDepaTotal + standaloneCMTotal),
                         totalSalesOrderValue: totalSalesOrderValue,
                         netOrderValue: round(totalSalesOrderValue - totalInvoiced),
                         summary: 'Sum of all SO activity'
