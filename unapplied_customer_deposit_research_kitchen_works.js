@@ -2588,25 +2588,25 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    var depositBalance = data.depositBalance || 0;' +
                 '    var arBalance = data.arBalance || 0;' +
                 '    html += "<div class=\\"comparison-summary\\">";' +
-                '    html += "<div class=\\"comparison-card\\"><div class=\\"comparison-card-label\\">Current Deposit Balance</div><div class=\\"comparison-card-value\\">" + formatCompCurrency(depositBalance) + "</div></div>";' +
-                '    html += "<div class=\\"comparison-card\\"><div class=\\"comparison-card-label\\">Current A/R Balance</div><div class=\\"comparison-card-value\\">" + formatCompCurrency(arBalance) + "</div></div>";' +
-                '    html += "<div class=\\"comparison-card\\"><div class=\\"comparison-card-label\\">Net Deposit Position</div><div class=\\"comparison-card-value\\">" + formatCompCurrency(totals.netDepositBalance || 0) + "</div></div>";' +
-                '    html += "<div class=\\"comparison-card " + (totals.netARBalance > 0.01 ? "warning" : totals.netARBalance < -0.01 ? "error" : "success") + "\\"><div class=\\"comparison-card-label\\">Net A/R Position</div><div class=\\"comparison-card-value\\">" + formatCompCurrency(totals.netARBalance || 0) + "</div></div>";' +
+                '    html += "<div class=\\"comparison-card\\"><div class=\\"comparison-card-label\\">Total SO Value</div><div class=\\"comparison-card-value\\">" + formatCompCurrency(totals.totalSalesOrderValue || 0) + "</div></div>";' +
+                '    html += "<div class=\\"comparison-card\\"><div class=\\"comparison-card-label\\">Total Invoiced</div><div class=\\"comparison-card-value\\">" + formatCompCurrency(totals.totalInvoiced || 0) + "</div></div>";' +
+                '    html += "<div class=\\"comparison-card " + (Math.abs(totals.netOrderValue || 0) < 0.01 ? "success" : "warning") + "\\"><div class=\\"comparison-card-label\\">Remaining Unbilled</div><div class=\\"comparison-card-value\\">" + formatCompCurrency(totals.netOrderValue || 0) + "</div></div>";' +
+                '    html += "<div class=\\"comparison-card " + (Math.abs(totals.netDepositBalance || 0) < 0.01 && Math.abs(totals.netARBalance || 0) < 0.01 ? "success" : "warning") + "\\"><div class=\\"comparison-card-label\\">Overall Status</div><div class=\\"comparison-card-value\\" style=\\"font-size:14px;\\">" + (Math.abs(totals.netDepositBalance || 0) < 0.01 && Math.abs(totals.netARBalance || 0) < 0.01 ? "BALANCED" : "OPEN") + "</div></div>";' +
                 '    html += "</div>";' +
                 '    ' +
                 '    /* Lifecycle Table */' +
                 '    html += "<div class=\\"comparison-table-container\\">";' +
                 '    html += "<table class=\\"comparison-table lifecycle-table\\" style=\\"font-size:13px;\\">";' +
                 '    html += "<thead><tr style=\\"background:#2c3e50;color:#000;\\">";' +
-                '    html += "<th style=\\"text-align:left;padding:12px 8px;\\">SO</th>";' +
-                '    html += "<th style=\\"text-align:left;padding:12px 8px;\\">TRANSACTION</th>";' +
-                '    html += "<th style=\\"text-align:center;padding:12px 8px;\\">TYPE</th>";' +
-                '    html += "<th style=\\"text-align:center;padding:12px 8px;\\">DATE</th>";' +
-                '    html += "<th class=\\"amount\\" style=\\"text-align:right;padding:12px 8px;\\">ORDER VALUE</th>";' +
-                '    html += "<th class=\\"amount\\" style=\\"text-align:right;padding:12px 8px;\\">DEPOSIT (+/-)</th>";' +
-                '    html += "<th class=\\"amount\\" style=\\"text-align:right;padding:12px 8px;\\">A/R (+/-)</th>";' +
-                '    html += "<th style=\\"text-align:left;padding:12px 8px;\\">Application Details</th>";' +
-                '    html += "<th style=\\"text-align:left;padding:12px 8px;\\">STATUS</th>";' +
+                '    html += "<th style=\\"text-align:left;padding:12px 8px;width:100px;\\">SO</th>";' +
+                '    html += "<th style=\\"text-align:left;padding:12px 8px;width:200px;\\">TRANSACTION</th>";' +
+                '    html += "<th style=\\"text-align:center;padding:12px 8px;width:60px;\\">TYPE</th>";' +
+                '    html += "<th style=\\"text-align:center;padding:12px 8px;width:90px;\\">DATE</th>";' +
+                '    html += "<th class=\\"amount\\" style=\\"text-align:right;padding:12px 8px;width:120px;\\">ORDER VALUE</th>";' +
+                '    html += "<th class=\\"amount\\" style=\\"text-align:right;padding:12px 8px;width:120px;\\">DEPOSIT (+/-)</th>";' +
+                '    html += "<th class=\\"amount\\" style=\\"text-align:right;padding:12px 8px;width:120px;\\">A/R (+/-)</th>";' +
+                '    html += "<th style=\\"text-align:left;padding:12px 8px;width:180px;max-width:180px;\\">Application Details</th>";' +
+                '    html += "<th style=\\"text-align:left;padding:12px 8px;width:100px;\\">STATUS</th>";' +
                 '    html += "</tr></thead>";' +
                 '    html += "<tbody>";' +
                 '    ' +
@@ -2624,11 +2624,19 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '        html += "<td style=\\"font-weight:600;padding:10px 8px;\\">SALES ORDER</td>";' +
                 '        html += "<td style=\\"text-align:center;padding:10px 8px;\\"><span class=\\"status-badge\\" style=\\"background:#3498db;color:#fff;padding:4px 8px;border-radius:4px;font-size:11px;\\">SO</span></td>";' +
                 '        html += "<td style=\\"text-align:center;padding:10px 8px;\\">" + so.soDate + "</td>";' +
-                '        html += "<td class=\\"amount\\" style=\\"font-weight:600;padding:10px 8px;\\">" + formatCompCurrency(so.soAmount) + "</td>";' +
+                '        ' +
+                '        var soOrderValue = so.isClosed ? "$0.00" : formatCompCurrency(so.soAmount);' +
+                '        html += "<td class=\\"amount\\" style=\\"font-weight:600;padding:10px 8px;\\">" + soOrderValue + "</td>";' +
+                '        ' +
                 '        html += "<td class=\\"amount\\" style=\\"padding:10px 8px;\\"></td>";' +
                 '        html += "<td class=\\"amount\\" style=\\"padding:10px 8px;\\"></td>";' +
                 '        html += "<td style=\\"padding:10px 8px;\\"></td>";' +
-                '        html += "<td style=\\"padding:10px 8px;color:#7f8c8d;font-size:12px;\\">" + so.soStatusText + "</td>";' +
+                '        ' +
+                '        var soStatus = so.soStatusText;' +
+                '        if (so.isClosed && so.originalAmount > 0) {' +
+                '            soStatus += " (Original Order Value: " + formatCompCurrency(so.originalAmount) + ")";' +
+                '        }' +
+                '        html += "<td style=\\"padding:10px 8px;color:#7f8c8d;font-size:12px;\\">" + soStatus + "</td>";' +
                 '        html += "</tr>";' +
                 '        ' +
                 '        /* Transaction Rows */' +
@@ -2646,8 +2654,15 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '            ' +
                 '            html += "<tr style=\\"background:" + bgColor + ";\\">";' +
                 '            html += "<td style=\\"padding:8px;\\"></td>";' +
-                '            html += "<td style=\\"padding:8px;padding-left:" + (txn.indent ? "30px" : "20px") + ";\\">";' +
-                '            html += (txn.indent || "") + "<a href=\\"/app/accounting/transactions/transaction.nl?id=" + txn.id + "\\" target=\\"_blank\\">" + txn.tranid + "</a>";' +
+                '            ' +
+                '            /* Transaction name with icon and indentation based on indentLevel */' +
+                '            var indentPx = 20 + ((txn.indentLevel || 0) * 20);' +
+                '            var icon = "";' +
+                '            if (txn.indentLevel === 1) icon = "\u2192 ";' +
+                '            if (txn.indentLevel === 2) icon = "\u21b3 ";' +
+                '            ' +
+                '            html += "<td style=\\"padding:8px;padding-left:" + indentPx + "px;\\">";' +
+                '            html += icon + "<a href=\\"/app/accounting/transactions/transaction.nl?id=" + txn.id + "\\" target=\\"_blank\\">" + txn.tranid + "</a>";' +
                 '            html += "</td>";' +
                 '            ' +
                 '            /* Type Badge */' +
@@ -2655,7 +2670,17 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '            html += "<td style=\\"text-align:center;padding:8px;\\"><span class=\\"status-badge\\" style=\\"background:" + badgeColor + ";color:#fff;padding:4px 8px;border-radius:4px;font-size:11px;font-weight:600;\\">" + txn.type + "</span></td>";' +
                 '            ' +
                 '            html += "<td style=\\"text-align:center;padding:8px;color:#666;font-size:12px;\\">" + txn.date + "</td>";' +
-                '            html += "<td class=\\"amount\\" style=\\"padding:8px;\\"></td>";' +
+                '            ' +
+                '            /* Order Value Column - show negative for INVs */' +
+                '            html += "<td class=\\"amount\\" style=\\"padding:8px;color:#000;\\">";' +
+                '            if (Math.abs(txn.orderValue || 0) > 0.01) {' +
+                '                var ovAmt = Math.abs(txn.orderValue);' +
+                '                var ovFormatted = "$" + ovAmt.toFixed(2).replace(/\\d(?=(\\d{3})+\\.)/g, "$&,");' +
+                '                html += txn.orderValue < 0 ? "(" + ovFormatted + ")" : ovFormatted;' +
+                '            } else {' +
+                '                html += "-";' +
+                '            }' +
+                '            html += "</td>";' +
                 '            ' +
                 '            /* Deposit Column */' +
                 '            html += "<td class=\\"amount\\" style=\\"padding:8px;color:#000;\\">";' +
@@ -2679,7 +2704,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '            }' +
                 '            html += "</td>";' +
                 '            ' +
-                '            html += "<td style=\\"padding:8px;font-size:12px;color:#666;\\">" + (txn.appliedTo || "") + "</td>";' +
+                '            html += "<td style=\\"padding:8px;font-size:12px;color:#666;max-width:180px;word-wrap:break-word;white-space:normal;\\">" + (txn.appliedTo || "") + "</td>";' +
                 '            html += "<td style=\\"padding:8px;font-size:12px;color:#666;\\">" + (txn.status || "") + "</td>";' +
                 '            html += "</tr>";' +
                 '        }' +
@@ -2689,7 +2714,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '        html += "<tr class=\\"subtotal-row\\" style=\\"background:#e8e8e8;border-bottom:2px solid #2c3e50;font-weight:600;\\">";' +
                 '        html += "<td colspan=\\"2\\" style=\\"padding:10px 8px;\\">SUBTOTAL " + so.soTranid + "</td>";' +
                 '        html += "<td colspan=\\"2\\" style=\\"text-align:right;padding:10px 8px;color:#7f8c8d;font-size:12px;\\">" + subtotal.status + "</td>";' +
-                '        html += "<td class=\\"amount\\" style=\\"padding:10px 8px;\\">" + formatCompCurrency(subtotal.soAmount || 0) + "</td>";' +
+                '        html += "<td class=\\"amount\\" style=\\"padding:10px 8px;\\">" + formatCompCurrency(subtotal.netOrderValue || 0) + "</td>";' +
                 '        html += "<td class=\\"amount\\" style=\\"padding:10px 8px;\\">" + formatCompCurrency(subtotal.netDeposit || 0) + "</td>";' +
                 '        html += "<td class=\\"amount\\" style=\\"padding:10px 8px;\\">" + formatCompCurrency(subtotal.netAR || 0) + "</td>";' +
                 '        html += "<td colspan=\\"2\\" style=\\"padding:10px 8px;\\"></td>";' +
@@ -2725,7 +2750,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    /* Grand Totals Row */' +
                 '    html += "<tr class=\\"comparison-totals\\" style=\\"background:#2c3e50;color:#fff;font-size:15px;font-weight:700;\\">";' +
                 '    html += "<td colspan=\\"4\\" style=\\"padding:12px 8px;\\">SO LIFECYCLE TOTALS</td>";' +
-                '    html += "<td class=\\"amount\\" style=\\"padding:12px 8px;\\"></td>";' +
+                '    html += "<td class=\\"amount\\" style=\\"padding:12px 8px;background:#2196f3;color:#fff;\\">" + formatCompCurrency(totals.netOrderValue || 0) + "</td>";' +
                 '    html += "<td class=\\"amount\\" style=\\"padding:12px 8px;background:#28a745;color:#fff;\\">" + formatCompCurrency(totals.netDepositBalance || 0) + "</td>";' +
                 '    html += "<td class=\\"amount\\" style=\\"padding:12px 8px;background:#ffc107;color:#000;\\">" + formatCompCurrency(totals.netARBalance || 0) + "</td>";' +
                 '    html += "<td colspan=\\"2\\" style=\\"padding:12px 8px;text-align:right;font-size:13px;\\">" + totals.summary + "</td>";' +
@@ -2759,20 +2784,27 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '        var so = salesOrders[i];' +
                 '        ' +
                 '        /* SO Header */' +
-                '        rows.push([so.soTranid, "SALES ORDER", "SO", so.soDate, so.soAmount, "", "", "", so.soStatusText]);' +
+                '        var soOrderValue = so.isClosed ? 0 : so.soAmount;' +
+                '        var soStatus = so.soStatusText;' +
+                '        if (so.isClosed && so.originalAmount > 0) {' +
+                '            soStatus += " (Original Order Value: $" + so.originalAmount.toFixed(2) + ")";' +
+                '        }' +
+                '        rows.push([so.soTranid, "SALES ORDER", "SO", so.soDate, soOrderValue, "", "", "", soStatus]);' +
                 '        ' +
                 '        /* Transactions */' +
                 '        var transactions = so.transactions || [];' +
                 '        for (var j = 0; j < transactions.length; j++) {' +
                 '            var txn = transactions[j];' +
+                '            var ovAmt = Math.abs(txn.orderValue || 0) > 0.01 ? txn.orderValue : "";' +
                 '            var depAmt = Math.abs(txn.depositAmount) > 0.01 ? txn.depositAmount : "";' +
                 '            var arAmt = Math.abs(txn.arAmount) > 0.01 ? txn.arAmount : "";' +
-                '            rows.push(["", (txn.indent || "") + txn.tranid, txn.type, txn.date, "", depAmt, arAmt, txn.appliedTo || "", txn.status || ""]);' +
+                '            var icon = txn.indentLevel === 1 ? "\u2192 " : txn.indentLevel === 2 ? "\u21b3 " : "";' +
+                '            rows.push(["", icon + txn.tranid, txn.type, txn.date, ovAmt, depAmt, arAmt, txn.appliedTo || "", txn.status || ""]);' +
                 '        }' +
                 '        ' +
                 '        /* Subtotal */' +
                 '        var subtotal = so.subtotal || {};' +
-                '        rows.push(["SUBTOTAL " + so.soTranid, "", "", "", subtotal.soAmount || 0, subtotal.netDeposit || 0, subtotal.netAR || 0, "", subtotal.status]);' +
+                '        rows.push(["SUBTOTAL " + so.soTranid, "", "", "", subtotal.netOrderValue || 0, subtotal.netDeposit || 0, subtotal.netAR || 0, "", subtotal.status]);' +
                 '    }' +
                 '    ' +
                 '    /* Unlinked Deposits */' +
@@ -2789,7 +2821,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '    /* Totals */' +
                 '    var totals = data.totals || {};' +
                 '    rows.push(["", "", "", "", "", "", "", "", ""]);' +
-                '    rows.push(["SO LIFECYCLE TOTALS", "", "", "", "", totals.netDepositBalance || 0, totals.netARBalance || 0, "", totals.summary]);' +
+                '    rows.push(["SO LIFECYCLE TOTALS", "", "", "", totals.netOrderValue || 0, totals.netDepositBalance || 0, totals.netARBalance || 0, "", totals.summary]);' +
                 '    ' +
                 '    /* Convert to CSV */' +
                 '    var csv = rows.map(function(row) {' +
@@ -6299,6 +6331,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 var totalDepositsApplied = 0;
                 var totalInvoiced = 0;
                 var totalARReductions = 0;
+                var totalSalesOrderValue = 0;
                 
                 // Process each SO
                 for (var i = 0; i < soResults.length; i++) {
@@ -6306,6 +6339,14 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                     var soIdKey = String(so.id);
                     var soDeposits = depositsBySO[soIdKey] || [];
                     var soInvoices = invoicesBySO[soIdKey] || [];
+                    
+                    var soAmount = parseFloat(so.amount) || 0;
+                    var isClosed = (so.status === 'H'); // 'H' = Closed status in NetSuite
+                    
+                    // Only add non-closed orders to total SO value
+                    if (!isClosed) {
+                        totalSalesOrderValue += soAmount;
+                    }
                     
                     var transactions = [];
                     var soDepositTotal = 0;
@@ -6327,10 +6368,10 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                             date: dep.cd_date,
                             depositAmount: depAmount,
                             arAmount: 0,
+                            orderValue: 0,
                             appliedTo: '',
                             status: 'Collected',
-                            indent: '  └ ',
-                            isChild: true
+                            indentLevel: 0
                         });
                         
                         // Get DEPAs for this deposit
@@ -6349,14 +6390,14 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                             transactions.push({
                                 type: 'DEPA',
                                 id: depa.id,
-                                tranid: depa.deposit_application_id,
+                                tranid: depa.deposit_application_id || ('DEPA' + depa.id),
                                 date: depa.trandate,
                                 depositAmount: depaAmount,
                                 arAmount: depaAmount,
+                                orderValue: 0,
                                 appliedTo: appliedTo,
-                                status: isOverpay ? 'Overpayment' : 'Applied',
-                                indent: '      → ',
-                                isChild: true,
+                                status: isOverpay ? 'Overpayment Applied' : 'Applied',
+                                indentLevel: 2,
                                 isOverpayment: isOverpay
                             });
                         }
@@ -6404,68 +6445,41 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                             date: inv.inv_date,
                             depositAmount: 0,
                             arAmount: invAmount,
+                            orderValue: -invAmount,
                             appliedTo: invAppDetails,
                             status: invStatusText,
-                            indent: '  └ ',
-                            isChild: true
+                            indentLevel: 1
                         });
                         
                         // Note: Payments are now included in invAppDetails above, so we don't push them separately
                         // This avoids duplication since they're already shown in the invoice's Application Details
                     }
                     
-                    // Sort transactions chronologically by parent date (CD date or INV date)
-                    // Group children with their parents
-                    var sortedTransactions = [];
-                    var parentTxns = [];
-                    
-                    // Identify all parent transactions (CDs and INVs)
-                    for (var j = 0; j < transactions.length; j++) {
-                        var txn = transactions[j];
-                        if (txn.type === 'CD' || txn.type === 'INV') {
-                            parentTxns.push(txn);
-                        }
-                    }
-                    
-                    // Sort parents by date
-                    parentTxns.sort(function(a, b) {
-                        return new Date(a.date) - new Date(b.date);
+                    // Sort all transactions chronologically by date, with type priority on same date
+                    // Type priority: CD (0), INV (1), DEPA (2)
+                    transactions.sort(function(a, b) {
+                        var dateCompare = new Date(a.date) - new Date(b.date);
+                        if (dateCompare !== 0) return dateCompare;
+                        
+                        // Same date - sort by type priority
+                        var typeOrder = { 'CD': 0, 'INV': 1, 'DEPA': 2 };
+                        return (typeOrder[a.type] || 999) - (typeOrder[b.type] || 999);
                     });
                     
-                    // Build sorted list with children following parents
-                    for (var j = 0; j < parentTxns.length; j++) {
-                        var parent = parentTxns[j];
-                        sortedTransactions.push(parent);
-                        
-                        // Add children (DEPAs for CDs)
-                        if (parent.type === 'CD') {
-                            for (var k = 0; k < transactions.length; k++) {
-                                var txn = transactions[k];
-                                if (txn.type === 'DEPA') {
-                                    // Check if this DEPA came from this CD by looking at source_deposit_id
-                                    var cdDepas = depApplsByDeposit[String(parent.id)] || [];
-                                    for (var m = 0; m < cdDepas.length; m++) {
-                                        if (cdDepas[m].id === txn.id) {
-                                            sortedTransactions.push(txn);
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
-                    transactions = sortedTransactions;
-                    
-                    // Calculate subtotals
+                    // Calculate subtotals including order value (SO amount - total invoiced)
+                    // For closed orders, use $0 as the base amount
+                    var soAmountForCalc = isClosed ? 0 : (parseFloat(so.amount) || 0);
                     var netDeposit = round(soDepositTotal + soDepositApplied);
                     var netAR = round(soInvoicedTotal + soARReductions);
+                    var netOrderValue = round(soAmountForCalc - soInvoicedTotal);
                     
                     var subtotalStatus;
                     if (netDeposit > 0.01) {
                         subtotalStatus = 'UNAPPLIED DEP: ' + formatCurrency(netDeposit);
                     } else if (netAR > 0.01) {
                         subtotalStatus = 'OPEN A/R: ' + formatCurrency(netAR);
+                    } else if (netOrderValue > 0.01) {
+                        subtotalStatus = 'UNBILLED: ' + formatCurrency(netOrderValue);
                     } else {
                         subtotalStatus = 'BALANCED';
                     }
@@ -6474,16 +6488,19 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                         soId: so.id,
                         soTranid: so.tranid,
                         soDate: so.trandate,
-                        soAmount: parseFloat(so.amount) || 0,
+                        soAmount: isClosed ? 0 : (parseFloat(so.amount) || 0),
+                        originalAmount: parseFloat(so.amount) || 0,
+                        isClosed: isClosed,
                         soStatus: so.status,
                         soStatusText: so.status_text,
                         transactions: transactions,
                         subtotal: {
-                            soAmount: round(parseFloat(so.amount) || 0),
+                            soAmount: round(isClosed ? 0 : (parseFloat(so.amount) || 0)),
                             netDeposit: netDeposit,
                             netAR: netAR,
+                            netOrderValue: netOrderValue,
                             status: subtotalStatus,
-                            balanced: (Math.abs(netDeposit) <= 0.01 && Math.abs(netAR) <= 0.01)
+                            balanced: (Math.abs(netDeposit) <= 0.01 && Math.abs(netAR) <= 0.01 && Math.abs(netOrderValue) <= 0.01)
                         }
                     });
                 }
@@ -6523,6 +6540,8 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                         totalInvoiced: totalInvoiced,
                         totalARReductions: totalARReductions,
                         netARBalance: round(totalInvoiced + totalARReductions),
+                        totalSalesOrderValue: totalSalesOrderValue,
+                        netOrderValue: round(totalSalesOrderValue - totalInvoiced),
                         summary: 'Sum of all SO activity'
                     }
                 };
