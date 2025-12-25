@@ -2481,13 +2481,14 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '        var createdDate = so.soCreatedDate ? so.soCreatedDate.split(" ")[0] : "-";' +
                 '        var status = so.soStatusText || "-";' +
                 '        var creator = so.soCreatedBy || "-";' +
-                '        var soNontax = so.soNontaxAmount || 0;' +
-                '        var soTax = so.soTaxAmount || 0;' +
-                '        var soTotal = so.soTotalAmount || 0;' +
+                '        var isClosed = so.isClosed || false;' +
+                '        var soNontax = isClosed ? 0 : (so.soNontaxAmount || 0);' +
+                '        var soTax = isClosed ? 0 : (so.soTaxAmount || 0);' +
+                '        var soTotal = isClosed ? 0 : (so.soTotalAmount || 0);' +
                 '        var invNontax = so.invNontaxBilled || 0;' +
                 '        var invTax = so.invTaxBilled || 0;' +
                 '        var invTotal = so.invTotalBilled || 0;' +
-                '        var unbilled = so.soTotalUnbilled || 0;' +
+                '        var unbilled = isClosed ? 0 : (so.soTotalUnbilled || 0);' +
                 '        var soTaxPct = so.soTaxPct || 0;' +
                 '        var invTaxPct = so.invTaxPct || 0;' +
                 '        var hasTaxDisc = so.hasTaxDiscrepancy || false;' +
@@ -2495,7 +2496,7 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '        ' +
                 '        var issuesHtml = "";' +
                 '        if (hasBillVar) {' +
-                '            issuesHtml += "<span class=\\"status-badge\\" style=\\"background:#9c27b0;color:#fff;\\" title=\\"Fully billed but amounts don\'t match\\">BILL VAR</span> ";' +
+                '            issuesHtml += "<span class=\\"status-badge\\" style=\\"background:#9c27b0;color:#fff;\\" title=\\"Fully billed but amounts do not match\\">BILL VAR</span> ";' +
                 '        }' +
                 '        if (hasTaxDisc) {' +
                 '            issuesHtml += "<span class=\\"status-badge status-warning\\" title=\\"Tax amounts differ between SO and invoices\\">TAX DISC</span>";' +
@@ -2505,11 +2506,12 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '        }' +
                 '        ' +
                 '        var rowClass = hasBillVar ? "bill-variance-row" : "";' +
+                '        var statusDisplay = isClosed ? "<strong>" + status + "</strong>" : status;' +
                 '        ' +
                 '        html += "<tr class=\\"" + rowClass + "\\">";' +
                 '        html += "<td><a href=\\"/app/accounting/transactions/salesord.nl?id=" + soId + "\\" target=\\"_blank\\">" + soTranid + "</a></td>";' +
                 '        html += "<td>" + trandate + "</td>";' +
-                '        html += "<td>" + status + "</td>";' +
+                '        html += "<td>" + statusDisplay + "</td>";' +
                 '        html += "<td class=\\"amount group-total-start\\">" + formatCompCurrency(soTotal) + "</td>";' +
                 '        html += "<td class=\\"amount group-total-end\\">" + formatCompCurrency(invTotal) + "</td>";' +
                 '        html += "<td class=\\"amount " + (unbilled > 0.01 ? "unbilled-amount" : "") + "\\">" + formatCompCurrency(unbilled) + "</td>";' +
@@ -6209,6 +6211,9 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                     var invTaxBilled = parseFloat(row.inv_tax_billed || 0);
                     var invTotalBilled = parseFloat(row.inv_total_billed || 0);
                     
+                    // Check if this is a closed order
+                    var isClosed = (status === 'H');
+                    
                     // Calculate tax percentages
                     var soTaxPct = soNontaxAmount > 0 ? Math.round((soTaxAmount / soNontaxAmount) * 100) : 0;
                     var invTaxPct = invNontaxBilled > 0 ? Math.round((invTaxBilled / invNontaxBilled) * 100) : 0;
@@ -6268,14 +6273,18 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                         soCreatedBy: employeeName,
                         soId: soId,
                         hasTaxDiscrepancy: hasTaxDiscrepancy,
-                        hasBillingVariance: hasBillingVariance
+                        hasBillingVariance: hasBillingVariance,
+                        isClosed: isClosed
                     });
                     
-                    totalSOs++;
-                    totalSOAmount += soNontaxAmount;
-                    totalSOTax += soTaxAmount;
-                    totalInvBilled += invNontaxBilled;
-                    totalInvTax += invTaxBilled;
+                    // Only add to totals if NOT closed
+                    if (!isClosed) {
+                        totalSOs++;
+                        totalSOAmount += soNontaxAmount;
+                        totalSOTax += soTaxAmount;
+                        totalInvBilled += invNontaxBilled;
+                        totalInvTax += invTaxBilled;
+                    }
                 }
                 
                 return {
