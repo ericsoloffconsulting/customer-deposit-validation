@@ -4215,10 +4215,17 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                 '- ALWAYS use user_name, never employee_id\n' +
                 '- CONSOLIDATE: When MAMOUNT and RUNITPRICE change same amount on same date, report ONCE\n' +
                 '- STATUS CHANGES must include DATE and WHO\n\n' +
+                'STATUS CHANGE CONTEXT:\n' +
+                '- A status moving from "Billed" → "Partially Fulfilled" typically indicates NEW LINE ITEMS were added to the order\n' +
+                '- Sales orders become "Billed" when all items are fulfilled and invoiced\n' +
+                '- Adding new items causes status to revert to "Partially Fulfilled" until new items are also fulfilled and billed\n' +
+                '- Do NOT use "reverted" for backward status changes; instead say "status changed to [status]" or "new items added (status: [status])"\n' +
+                '- Example: Instead of "reverted to Partially Fulfilled", say "status changed to Partially Fulfilled (indicating new line items added)"\n\n' +
                 'OUTPUT FORMAT:\n\n' +
                 'SUMMARY:\n' +
                 '2-3 sentences. If post-fulfillment changes detected, lead with:\n' +
-                '"⚠️ POST-FULFILLMENT VALUE CHANGE: [itemid] ([description]) was fulfilled [date] but value changed [later date]. Invoice may not match current SO."\n' +
+                '"⚠️ POST-FULFILLMENT VALUE CHANGE: [itemid] ([description]) was fulfilled [date] but value changed [later date] by [employee name]. Invoice may not match current SO."\n' +
+                'CRITICAL: Always include WHO made the post-fulfillment change in the summary statement.\n' +
                 'If none: "✓ No post-fulfillment value changes detected. [Brief order summary]."\n\n' +
                 'ORDER TOTAL CHANGES:\n' +
                 '• [date] ([employee]): Initial $X (SET)\n' +
@@ -6733,18 +6740,41 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url', 'N/record
                             indentLevel: 1
                         });
                         
-                        // Note: Payments are now included in invAppDetails above, so we don't push them separately
-                        // This avoids duplication since they're already shown in the invoice's Application Details
+                        // Add customer payments as separate transaction rows
+                        for (var k = 0; k < invPymts.length; k++) {
+                            var pymt = invPymts[k];
+                            var pymtAmount = -Math.abs(parseFloat(pymt.applied_amount) || 0);
+                            
+                            // Update SO totals
+                            soARReductions += pymtAmount;
+                            totalARReductions += pymtAmount;
+                            
+                            var pymtStatus = pymt.payment_memo || 'Payment Applied';
+                            var appliedToInv = pymt.applied_to_invoice_name || inv.inv_tranid;
+                            
+                            transactions.push({
+                                type: 'PYMT',
+                                id: pymt.payment_id,
+                                tranid: pymt.payment_tranid || ('PYMT' + pymt.payment_id),
+                                date: pymt.payment_date,
+                                depositAmount: 0,
+                                arAmount: pymtAmount,
+                                orderValue: 0,
+                                appliedTo: appliedToInv,
+                                status: pymtStatus,
+                                indentLevel: 2
+                            });
+                        }
                     }
                     
                     // Sort all transactions chronologically by date, with type priority on same date
-                    // Type priority: CD (0), INV (1), DEPA (2)
+                    // Type priority: CD (0), INV (1), DEPA (2), PYMT (3)
                     transactions.sort(function(a, b) {
                         var dateCompare = new Date(a.date) - new Date(b.date);
                         if (dateCompare !== 0) return dateCompare;
                         
                         // Same date - sort by type priority
-                        var typeOrder = { 'CD': 0, 'INV': 1, 'DEPA': 2 };
+                        var typeOrder = { 'CD': 0, 'INV': 1, 'DEPA': 2, 'PYMT': 3 };
                         return (typeOrder[a.type] || 999) - (typeOrder[b.type] || 999);
                     });
                     

@@ -772,6 +772,13 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                             ON so.employee = emp.id
                     WHERE t.type = 'CustDep'
                       AND t.trandate <= TO_DATE('` + balanceAsOf + `', 'YYYY-MM-DD')
+                      AND EXISTS (
+                          SELECT 1 
+                          FROM transactionaccountingline tal_check
+                          WHERE tal_check.transaction = t.id
+                            AND tal_check.account = 850
+                            AND tal_check.posting = 'T'
+                      )
                     GROUP BY t.id,
                              t.tranid,
                              t.trandate,
@@ -841,6 +848,13 @@ define(['N/ui/serverWidget', 'N/query', 'N/log', 'N/runtime', 'N/url'],
                             FROM transaction t
                             WHERE t.type = 'CustDep'
                               AND t.trandate <= TO_DATE('` + balanceAsOf + `', 'YYYY-MM-DD')
+                              AND EXISTS (
+                                  SELECT 1 
+                                  FROM transactionaccountingline tal_check
+                                  WHERE tal_check.transaction = t.id
+                                    AND tal_check.account = 850
+                                    AND tal_check.posting = 'T'
+                              )
                             GROUP BY t.id, t.foreigntotal
                             HAVING (t.foreigntotal - (SELECT COALESCE(SUM(depa2.foreigntotal), 0)
                                                       FROM previousTransactionLineLink ptll2
